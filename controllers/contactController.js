@@ -49,9 +49,24 @@ exports.createContactMessage = async (req, res) => {
 // @desc    Get all contact messages (admin)
 // @route   GET /api/contact/messages
 // @access  Private/Admin
+// @desc    Get all contact messages (admin)
+// @route   GET /api/contact/messages
+// @access  Private/Admin
 exports.getContactMessages = async (req, res) => {
   try {
+    console.log('=== getContactMessages START ===');
+    console.log('Query parameters:', req.query);
+    console.log('User making request:', req.user);
+    
     const { page = 1, limit = 10, status, search } = req.query;
+    
+    console.log('Calling ContactMessage.findAll with:', {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      status,
+      search
+    });
+    
     const result = await ContactMessage.findAll({
       page: parseInt(page),
       limit: parseInt(limit),
@@ -59,16 +74,26 @@ exports.getContactMessages = async (req, res) => {
       search
     });
 
+    console.log('Result from ContactMessage.findAll:', result);
+    
     res.json({
       success: true,
       data: result.messages,
       pagination: result.pagination
     });
+    
+    console.log('=== getContactMessages END ===');
   } catch (error) {
-    console.error('Error fetching contact messages:', error);
+    console.error('=== ERROR in getContactMessages ===');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Error code:', error.code);
+    console.error('Error sqlMessage:', error.sqlMessage);
+    console.error('Error sqlState:', error.sqlState);
+    
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error: ' + error.message
     });
   }
 };

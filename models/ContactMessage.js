@@ -17,7 +17,11 @@ class ContactMessage {
   }
 
   // Get all messages (for admin)
-  static async findAll({ page = 1, limit = 10, status = null, search = '' }) {
+  // In ContactMessage model, update the findAll method:
+static async findAll({ page = 1, limit = 10, status = null, search = '' }) {
+  try {
+    console.log('findAll called with params:', { page, limit, status, search });
+    
     let sql = `
       SELECT id, name, email, phone, subject, 
              LEFT(message, 100) as message_preview, 
@@ -28,18 +32,21 @@ class ContactMessage {
     `;
     
     const params = [];
+    const countParams = [];
     
-    // Filter by status
-    if (status) {
+    // Filter by status - only if status is provided and not 'all'
+    if (status && status !== 'all') {
       sql += ` AND status = ?`;
       params.push(status);
+      countParams.push(status);
     }
     
-    // Search functionality
-    if (search) {
+    // Search functionality - only if search is provided
+    if (search && search.trim() !== '') {
       sql += ` AND (name LIKE ? OR email LIKE ? OR subject LIKE ? OR message LIKE ?)`;
       const searchTerm = `%${search}%`;
       params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+      countParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
     
     // Order and pagination
@@ -47,41 +54,48 @@ class ContactMessage {
     
     const offset = (page - 1) * limit;
     sql += ` LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
+    params.push(parseInt(limit), parseInt(offset));
     
-    try {
-      const [messages] = await db.execute(sql, params);
-      
-      // Get total count for pagination
-      const countSql = `
-        SELECT COUNT(*) as total 
-        FROM contact_messages 
-        WHERE 1=1 ${status ? 'AND status = ?' : ''} ${search ? 'AND (name LIKE ? OR email LIKE ? OR subject LIKE ? OR message LIKE ?)' : ''}
-      `;
-      
-      const countParams = [];
-      if (status) countParams.push(status);
-      if (search) {
-        const searchTerm = `%${search}%`;
-        countParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
-      }
-      
-      const [countResult] = await db.execute(countSql, countParams);
-      const total = countResult[0].total;
-      
-      return {
-        messages,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      };
-    } catch (error) {
-      throw new Error(`Error fetching contact messages: ${error.message}`);
+    console.log('SQL Query:', sql);
+    console.log('SQL Params:', params);
+    
+    const [messages] = await db.execute(sql, params);
+    
+    // Get total count for pagination
+    let countSql = `SELECT COUNT(*) as total FROM contact_messages WHERE 1=1`;
+    
+    if (status && status !== 'all') {
+      countSql += ` AND status = ?`;
     }
+    
+    if (search && search.trim() !== '') {
+      countSql += ` AND (name LIKE ? OR email LIKE ? OR subject LIKE ? OR message LIKE ?)`;
+    }
+    
+    console.log('Count SQL:', countSql);
+    console.log('Count Params:', countParams);
+    
+    const [countResult] = await db.execute(countSql, countParams);
+    const total = countResult[0]?.total || 0;
+    
+    console.log('Total messages found:', total);
+    console.log('Messages retrieved:', messages.length);
+    
+    return {
+      messages,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: parseInt(total),
+        pages: Math.ceil(total / limit)
+      }
+    };
+  } catch (error) {
+    console.error('Error in ContactMessage.findAll:', error);
+    console.error('Error stack:', error.stack);
+    throw new Error(`Error fetching contact messages: ${error.message}`);
   }
+}
 
   // Get message by ID
   static async findById(id) {

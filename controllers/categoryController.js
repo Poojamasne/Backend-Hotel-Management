@@ -88,7 +88,7 @@ exports.createCategory = async (req, res) => {
             fs.writeFileSync(filePath, req.file.buffer);
             
             console.log('File saved to:', filePath);
-            console.log('Accessible at:', `http://localhost:5000${imagePath}`);
+            console.log('Accessible at:', `https://backend-hotel-management.onrender.com${imagePath}`);
         }
         
         const category = await Category.create({
