@@ -242,8 +242,8 @@ exports.updateProduct = async (req, res) => {
         const updateData = req.body;
         
         console.log('Update product request:', productId);
-        console.log('Update data received:', updateData);
-        console.log('Update data keys:', Object.keys(updateData));
+        console.log('Update data:', updateData);
+        console.log('File received:', req.file); // Log the uploaded file
         
         // Check if product exists
         const existingProduct = await Product.findById(productId);
@@ -254,17 +254,61 @@ exports.updateProduct = async (req, res) => {
             });
         }
         
-        console.log('Existing product:', existingProduct);
+        // Handle file upload if new image is provided
+        if (req.file) {
+            updateData.image = `/uploads/products/${req.file.filename}`;
+            console.log('New image path:', updateData.image);
+        } else if (updateData.image === '') {
+            // If image is explicitly set to empty string, keep existing
+            delete updateData.image;
+        }
+        
+        // Parse tags and ingredients if they come as strings
+        if (updateData.tags) {
+            try {
+                updateData.tags = JSON.parse(updateData.tags);
+            } catch (error) {
+                updateData.tags = Array.isArray(updateData.tags) ? updateData.tags : 
+                                 updateData.tags.split(',').map(tag => tag.trim());
+            }
+        }
+        
+        if (updateData.ingredients) {
+            try {
+                updateData.ingredients = JSON.parse(updateData.ingredients);
+            } catch (error) {
+                updateData.ingredients = Array.isArray(updateData.ingredients) ? updateData.ingredients : 
+                                       updateData.ingredients.split(',').map(ing => ing.trim());
+            }
+        }
         
         // Handle boolean conversions
         if (updateData.is_available !== undefined) {
-            updateData.is_available = updateData.is_available === true || updateData.is_available === 'true' || updateData.is_available === '1';
+            updateData.is_available = updateData.is_available === true || 
+                                     updateData.is_available === 'true' || 
+                                     updateData.is_available === '1';
         }
         if (updateData.is_popular !== undefined) {
-            updateData.is_popular = updateData.is_popular === true || updateData.is_popular === 'true' || updateData.is_popular === '1';
+            updateData.is_popular = updateData.is_popular === true || 
+                                   updateData.is_popular === 'true' || 
+                                   updateData.is_popular === '1';
         }
         if (updateData.is_featured !== undefined) {
-            updateData.is_featured = updateData.is_featured === true || updateData.is_featured === 'true' || updateData.is_featured === '1';
+            updateData.is_featured = updateData.is_featured === true || 
+                                    updateData.is_featured === 'true' || 
+                                    updateData.is_featured === '1';
+        }
+        
+        // Validate type if provided
+        if (updateData.type) {
+            const productType = updateData.type.toLowerCase();
+            if (productType !== 'veg' && productType !== 'non-veg') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Type must be either "veg" or "non-veg"'
+                });
+            }
+            updateData.type = productType;
         }
         
         console.log('Processed update data:', updateData);
