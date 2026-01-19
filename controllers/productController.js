@@ -241,7 +241,9 @@ exports.updateProduct = async (req, res) => {
         const productId = req.params.id;
         const updateData = req.body;
         
-        console.log('Update product request:', productId, updateData);
+        console.log('Update product request:', productId);
+        console.log('Update data received:', updateData);
+        console.log('Update data keys:', Object.keys(updateData));
         
         // Check if product exists
         const existingProduct = await Product.findById(productId);
@@ -252,18 +254,24 @@ exports.updateProduct = async (req, res) => {
             });
         }
         
+        console.log('Existing product:', existingProduct);
+        
         // Handle boolean conversions
         if (updateData.is_available !== undefined) {
-            updateData.is_available = updateData.is_available === true || updateData.is_available === 'true';
+            updateData.is_available = updateData.is_available === true || updateData.is_available === 'true' || updateData.is_available === '1';
         }
         if (updateData.is_popular !== undefined) {
-            updateData.is_popular = updateData.is_popular === true || updateData.is_popular === 'true';
+            updateData.is_popular = updateData.is_popular === true || updateData.is_popular === 'true' || updateData.is_popular === '1';
         }
         if (updateData.is_featured !== undefined) {
-            updateData.is_featured = updateData.is_featured === true || updateData.is_featured === 'true';
+            updateData.is_featured = updateData.is_featured === true || updateData.is_featured === 'true' || updateData.is_featured === '1';
         }
         
+        console.log('Processed update data:', updateData);
+        
         const product = await Product.update(productId, updateData);
+        
+        console.log('Product updated successfully');
         
         res.json({
             success: true,
@@ -272,10 +280,22 @@ exports.updateProduct = async (req, res) => {
         });
     } catch (error) {
         console.error('Update product error:', error);
+        console.error('Error stack:', error.stack);
+        
+        // Handle specific MySQL errors
+        if (error.code === 'ER_BAD_FIELD_ERROR') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid field in update request',
+                error: error.sqlMessage
+            });
+        }
+        
         res.status(500).json({
             success: false,
-            message: 'Server error',
-            error: error.message
+            message: 'Failed to update product',
+            error: error.message,
+            sqlError: process.env.NODE_ENV === 'development' ? error.sqlMessage : undefined
         });
     }
 };

@@ -195,49 +195,85 @@ class Product {
     }
     
     // Update product
-    static async update(id, updateData) {
-        const fields = [];
-        const values = [];
-        
-        for (const [key, value] of Object.entries(updateData)) {
-            if (key === 'tags' || key === 'ingredients') {
-                // Convert arrays to JSON strings
-                fields.push(`${key} = ?`);
-                values.push(value && Array.isArray(value) && value.length > 0 ? JSON.stringify(value) : null);
-            } else if (key === 'price' || key === 'original_price') {
-                // Convert to float
-                fields.push(`${key} = ?`);
-                values.push(parseFloat(value));
-            } else if (key === 'category_id') {
-                // Convert to integer
-                fields.push(`${key} = ?`);
-                values.push(parseInt(value));
-            } else if (key === 'is_available' || key === 'is_popular' || key === 'is_featured') {
-                // Convert boolean to MySQL tinyint
-                fields.push(`${key} = ?`);
-                values.push(value ? 1 : 0);
-            } else if (key === 'type' && value) {
-                // Ensure type is lowercase for ENUM
-                fields.push(`${key} = ?`);
-                values.push(value.toLowerCase());
-            } else {
-                fields.push(`${key} = ?`);
-                values.push(value);
-            }
+static async update(id, updateData) {
+    const fields = [];
+    const values = [];
+    
+    // List of valid product columns that can be updated
+    const validColumns = [
+        'name', 'description', 'price', 'original_price', 'category_id',
+        'category_slug', 'image', 'type', 'tags', 'prep_time',
+        'ingredients', 'is_available', 'is_popular', 'is_featured'
+    ];
+    
+    for (const [key, value] of Object.entries(updateData)) {
+        // Skip invalid columns (like category_name which comes from JOIN)
+        if (!validColumns.includes(key)) {
+            console.warn(`Skipping invalid column for update: ${key}`);
+            continue;
         }
         
-        // Always update updated_at
-        fields.push('updated_at = NOW()');
-        
-        values.push(id);
-        
-        await db.execute(
-            `UPDATE products SET ${fields.join(', ')} WHERE id = ?`,
-            values
-        );
-        
-        return this.findById(id);
+        if (key === 'tags' || key === 'ingredients') {
+            // Convert arrays to JSON strings
+            fields.push(`${key} = ?`);
+            values.push(value && Array.isArray(value) && value.length > 0 ? JSON.stringify(value) : null);
+        } else if (key === 'price' || key === 'original_price') {
+            // Convert to float
+            fields.push(`${key} = ?`);
+            values.push(parseFloat(value));
+        } else if (key === 'category_id') {
+            // Convert to integer
+            fields.push(`${key} = ?`);
+            values.push(parseInt(value));
+            
+            // If category_id changes, we should also update category_slug
+            // You need to get the new category slug from categories table
+            try {
+                const [categoryRows] = await db.execute(
+                    'SELECT slug FROM categories WHERE id = ?',
+                    [parseInt(value)]
+                );
+                if (categoryRows.length > 0) {
+                    fields.push('category_slug = ?');
+                    values.push(categoryRows[0].slug);
+                }
+            } catch (error) {
+                console.error('Failed to get category slug:', error);
+            }
+        } else if (key === 'is_available' || key === 'is_popular' || key === 'is_featured') {
+            // Convert boolean to MySQL tinyint
+            fields.push(`${key} = ?`);
+            values.push(value ? 1 : 0);
+        } else if (key === 'type' && value) {
+            // Ensure type is lowercase for ENUM
+            fields.push(`${key} = ?`);
+            values.push(value.toLowerCase());
+        } else {
+            fields.push(`${key} = ?`);
+            values.push(value);
+        }
     }
+    
+    // Always update updated_at
+    fields.push('updated_at = NOW()');
+    
+    values.push(id);
+    
+    // Don't execute if no valid fields to update
+    if (fields.length <= 1) { // Only updated_at
+        throw new Error('No valid fields to update');
+    }
+    
+    console.log('Update query fields:', fields);
+    console.log('Update query values:', values);
+    
+    await db.execute(
+        `UPDATE products SET ${fields.join(', ')} WHERE id = ?`,
+        values
+    );
+    
+    return this.findById(id);
+}
     
     // Delete product (soft delete - set is_available to false)
     static async delete(id) {
