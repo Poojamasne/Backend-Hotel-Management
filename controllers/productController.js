@@ -101,19 +101,49 @@ exports.createProduct = async (req, res) => {
     try {
         console.log('Create product request received');
         console.log('Request body:', req.body);
+        console.log('Files:', req.file); // Check for uploaded file
         
-        const {
+        // Parse tags and ingredients if they come as strings
+        let { 
             name, description, price, original_price, category_id,
             image, type, tags, prep_time,
             ingredients, is_available, is_popular, is_featured
         } = req.body;
         
-        // Validate required fields
-        if (!name || !price || !category_id || !type) {
-            console.log('Missing required fields:', { name, price, category_id, type });
+        // Handle file upload
+        let imageUrl = image || null;
+        if (req.file) {
+            imageUrl = `/uploads/products/${req.file.filename}`;
+        }
+        
+        // Parse tags and ingredients (they might come as strings from form-data)
+        let parsedTags = [];
+        let parsedIngredients = [];
+        
+        if (tags) {
+            try {
+                parsedTags = JSON.parse(tags);
+            } catch (error) {
+                parsedTags = Array.isArray(tags) ? tags : tags.split(',').map(tag => tag.trim());
+            }
+        }
+        
+        if (ingredients) {
+            try {
+                parsedIngredients = JSON.parse(ingredients);
+            } catch (error) {
+                parsedIngredients = Array.isArray(ingredients) ? ingredients : ingredients.split(',').map(ing => ing.trim());
+            }
+        }
+        
+        // Validate required fields - Updated to include image
+        if (!name || !price || !category_id || !type || !imageUrl) {
+            console.log('Missing required fields:', { 
+                name, price, category_id, type, image: imageUrl 
+            });
             return res.status(400).json({
                 success: false,
-                message: 'Required fields: name, price, category_id, type'
+                message: 'Name, price, category, image and type are required'
             });
         }
         
@@ -133,14 +163,20 @@ exports.createProduct = async (req, res) => {
             price: parseFloat(price),
             original_price: original_price ? parseFloat(original_price) : null,
             category_id: parseInt(category_id),
-            image: image || null,
+            image: imageUrl,
             type: productType,
-            tags: tags || [],
+            tags: parsedTags,
             prep_time: prep_time || '15-20 min',
-            ingredients: ingredients || [],
-            is_available: is_available !== undefined ? Boolean(is_available) : true,
-            is_popular: is_popular !== undefined ? Boolean(is_popular) : false,
-            is_featured: is_featured !== undefined ? Boolean(is_featured) : false
+            ingredients: parsedIngredients,
+            is_available: is_available !== undefined 
+                ? (is_available === true || is_available === 'true' || is_available === '1') 
+                : true,
+            is_popular: is_popular !== undefined 
+                ? (is_popular === true || is_popular === 'true' || is_popular === '1') 
+                : false,
+            is_featured: is_featured !== undefined 
+                ? (is_featured === true || is_featured === 'true' || is_featured === '1') 
+                : false
         };
         
         console.log('Creating product with processed data:', productData);
@@ -197,8 +233,6 @@ exports.createProduct = async (req, res) => {
         });
     }
 };
-
-// ... keep other functions as they are
 
 // @desc    Update product (Admin only)
 // @route   PUT /api/admin/products/:id
