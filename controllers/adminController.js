@@ -180,69 +180,100 @@ exports.getDashboardStats = async (req, res) => {
 
 // @desc    Get All Products (Admin)
 // @route   GET /api/admin/products
+// In controllers/adminController.js - update getAdminProducts
 exports.getAdminProducts = async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 20;
-        const offset = (page - 1) * limit;
-        
-        let query = `
-            SELECT p.*, c.name as category_name 
-            FROM products p 
-            LEFT JOIN categories c ON p.category_id = c.id 
-            WHERE 1=1
-        `;
-        
-        let countQuery = `SELECT COUNT(*) as total FROM products WHERE 1=1`;
-        const params = [];
-        const countParams = [];
-        
-        // Filters
-        if (req.query.search) {
-            query += ' AND p.name LIKE ?';
-            countQuery += ' AND name LIKE ?';
-            params.push(`%${req.query.search}%`);
-            countParams.push(`%${req.query.search}%`);
-        }
-        
-        if (req.query.category) {
-            query += ' AND p.category_id = ?';
-            countQuery += ' AND category_id = ?';
-            params.push(req.query.category);
-            countParams.push(req.query.category);
-        }
-        
-        if (req.query.status === 'active') {
-            query += ' AND p.is_available = TRUE';
-            countQuery += ' AND is_available = TRUE';
-        } else if (req.query.status === 'inactive') {
-            query += ' AND p.is_available = FALSE';
-            countQuery += ' AND is_available = FALSE';
-        }
-        
-        // Add pagination
-        query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
-        params.push(limit, offset);
-        
-        // Execute queries
-        const [products] = await db.execute(query, params);
-        const [[{ total }]] = await db.execute(countQuery, countParams);
-        
-        res.json({
-            success: true,
-            total: parseInt(total),
-            page,
-            limit,
-            total_pages: Math.ceil(total / limit),
-            data: products
-        });
-    } catch (error) {
-        console.error('Get admin products error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+  try {
+    const { page = 1, limit = 10, category_id, search, status } = req.query;
+    
+    console.log('getAdminProducts called with:', { page, limit, category_id, search, status });
+    
+    // Convert to numbers
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const offsetNum = (pageNum - 1) * limitNum;
+    
+    let sql = `
+      SELECT p.*, c.name as category_name 
+      FROM products p 
+      LEFT JOIN categories c ON p.category_id = c.id 
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    if (category_id) {
+      sql += ` AND p.category_id = ?`;
+      params.push(category_id);
     }
+    
+    if (search) {
+      sql += ` AND (p.name LIKE ? OR p.description LIKE ?)`;
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm);
+    }
+    
+    if (status) {
+      sql += ` AND p.is_active = ?`;
+      params.push(status === 'active' ? 1 : 0);
+    }
+    
+    // Use direct values for LIMIT/OFFSET
+    sql += ` ORDER BY p.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
+    
+    console.log('Products SQL:', sql);
+    console.log('Products params:', params);
+    
+    const [products] = await db.execute(sql, params);
+    
+    // Get total count
+    let countSql = `SELECT COUNT(*) as total FROM products p WHERE 1=1`;
+    const countParams = [];
+    
+    if (category_id) {
+      countSql += ` AND p.category_id = ?`;
+      countParams.push(category_id);
+    }
+    
+    if (search) {
+      countSql += ` AND (p.name LIKE ? OR p.description LIKE ?)`;
+      const searchTerm = `%${search}%`;
+      countParams.push(searchTerm, searchTerm);
+    }
+    
+    if (status) {
+      countSql += ` AND p.is_active = ?`;
+      countParams.push(status === 'active' ? 1 : 0);
+    }
+    
+    const [countResult] = await db.execute(countSql, countParams);
+    const total = countResult[0]?.total || 0;
+    
+    console.log('Total products:', total);
+    
+    res.json({
+      success: true,
+      data: products,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: parseInt(total, 10),
+        pages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Get admin products error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
 };
 
 // @desc    Create Product (Admin)
@@ -458,11 +489,14 @@ exports.deleteProduct = async (req, res) => {
 
 // @desc    Get All Orders (Admin)
 // @route   GET /api/admin/orders
+// In adminController.js - update the getAdminOrders function
 exports.getAdminOrders = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
         const offset = (page - 1) * limit;
+        
+        console.log('getAdminOrders called with:', { page, limit, ...req.query });
         
         let query = `
             SELECT o.*, u.name as customer_name, u.email as customer_email, u.phone as customer_phone
@@ -504,13 +538,23 @@ exports.getAdminOrders = async (req, res) => {
             countParams.push(`%${req.query.search}%`, `%${req.query.search}%`);
         }
         
-        // Add pagination
-        query += ' ORDER BY o.created_at DESC LIMIT ? OFFSET ?';
-        params.push(limit, offset);
+        // Add ordering
+        query += ' ORDER BY o.created_at DESC';
+        
+        // Use direct values for LIMIT/OFFSET to avoid MySQL prepared statement issues
+        query += ` LIMIT ${limit} OFFSET ${offset}`;
+        
+        console.log('Orders query:', query);
+        console.log('Orders params:', params);
+        console.log('Count query:', countQuery);
+        console.log('Count params:', countParams);
         
         // Execute queries
         const [orders] = await db.execute(query, params);
         const [[{ total }]] = await db.execute(countQuery, countParams);
+        
+        console.log('Found orders:', orders.length);
+        console.log('Total orders:', total);
         
         // Get order items for each order
         for (const order of orders) {
@@ -532,15 +576,21 @@ exports.getAdminOrders = async (req, res) => {
         });
     } catch (error) {
         console.error('Get admin orders error:', error);
+        console.error('Error details:', {
+            message: error.message,
+            code: error.code,
+            errno: error.errno,
+            sqlState: error.sqlState,
+            sqlMessage: error.sqlMessage
+        });
         res.status(500).json({
             success: false,
-            message: 'Server error'
+            message: 'Server error: ' + error.message
         });
     }
 };
 
-// @desc    Update Order Status (Admin)
-// @route   PUT /api/admin/orders/:id/status
+
 exports.updateOrderStatus = async (req, res) => {
     try {
         const orderId = req.params.id;

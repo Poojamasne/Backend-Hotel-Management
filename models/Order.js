@@ -122,17 +122,23 @@ static async create(orderData, userId) {
 }
 
   // Get user's orders
-  static async findByUser(userId, page = 1, limit = 10) {
-    const offset = (page - 1) * limit;
+ // Update findByUser method too
+static async findByUser(userId, page = 1, limit = 10) {
+  try {
+    // Convert to numbers
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const offsetNum = (pageNum - 1) * limitNum;
     
+    // Use direct values for LIMIT/OFFSET
     const [orders] = await db.execute(
       `SELECT o.*,
         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count
        FROM orders o
        WHERE o.user_id = ?
        ORDER BY o.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [userId, limit, offset]
+       LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      [userId]
     );
     
     // Get total count
@@ -141,7 +147,7 @@ static async create(orderData, userId) {
       [userId]
     );
     
-    const total = countResult[0].total;
+    const total = countResult[0]?.total || 0;
     
     // Get items for each order
     for (let order of orders) {
@@ -155,13 +161,17 @@ static async create(orderData, userId) {
     return {
       orders,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
+        page: pageNum,
+        limit: limitNum,
+        total: parseInt(total, 10),
+        pages: Math.ceil(total / limitNum)
       }
     };
+  } catch (error) {
+    console.error('Error in Order.findByUser:', error);
+    throw error;
   }
+}
 
   // Get order by ID
   static async findById(id, userId = null) {
@@ -258,13 +268,17 @@ static async create(orderData, userId) {
   }
 
   // Get all orders (admin)
-  static async findAll(page = 1, limit = 20, filters = {}) {
+ // Update the findAll method in Order.js
+static async findAll(page = 1, limit = 20, filters = {}) {
+  try {
+    console.log('Order.findAll called with:', { page, limit, filters });
+    
     let query = `SELECT o.*, 
                  u.name as user_name, u.email as user_email, u.phone as user_phone,
                  (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count
                  FROM orders o
                  LEFT JOIN users u ON o.user_id = u.id`;
-    let countQuery = `SELECT COUNT(*) as total FROM orders o`;
+    let countQuery = `SELECT COUNT(*) as total FROM orders o LEFT JOIN users u ON o.user_id = u.id`;
     const whereClauses = [];
     const params = [];
     const countParams = [];
@@ -305,30 +319,53 @@ static async create(orderData, userId) {
     if (whereClauses.length > 0) {
       const whereClause = ' WHERE ' + whereClauses.join(' AND ');
       query += whereClause;
-      countQuery += whereClause.replace(/o\./g, 'o.');
+      countQuery += whereClause;
     }
 
-    // Add sorting and pagination
-    query += ' ORDER BY o.created_at DESC LIMIT ? OFFSET ?';
-    const offset = (page - 1) * limit;
-    params.push(limit, offset);
+    // Convert page and limit to numbers
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const offsetNum = (pageNum - 1) * limitNum;
+    
+    // Add sorting and pagination - Use direct values for LIMIT/OFFSET
+    query += ' ORDER BY o.created_at DESC';
+    query += ` LIMIT ${limitNum} OFFSET ${offsetNum}`;
+
+    console.log('Orders query:', query);
+    console.log('Orders params:', params);
+    console.log('Count query:', countQuery);
+    console.log('Count params:', countParams);
 
     // Execute queries
     const [orders] = await db.execute(query, params);
     const [countResult] = await db.execute(countQuery, countParams);
     
-    const total = countResult[0].total;
+    const total = countResult[0]?.total || 0;
+
+    console.log('Found orders:', orders.length);
+    console.log('Total orders:', total);
 
     return {
       orders,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
+        page: pageNum,
+        limit: limitNum,
+        total: parseInt(total, 10),
+        pages: Math.ceil(total / limitNum)
       }
     };
+  } catch (error) {
+    console.error('Error in Order.findAll:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    throw error;
   }
+}
 
   // Get order statistics
   static async getStats() {

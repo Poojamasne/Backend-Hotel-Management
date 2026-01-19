@@ -76,30 +76,47 @@ static async findAll() {
 }
 
 // Find users with pagination (optional)
+// In User model - update the findAllPaginated method
 static async findAllPaginated(page = 1, limit = 10) {
-    const offset = (page - 1) * limit;
-    
-    const [rows] = await db.execute(
-        `SELECT id, name, email, phone, address, role, 
-                profile_image, is_active, created_at, updated_at 
-         FROM users 
-         ORDER BY created_at DESC 
-         LIMIT ? OFFSET ?`,
-        [limit, offset]
-    );
-    
-    // Get total count
-    const [[{ total }]] = await db.execute(
-        'SELECT COUNT(*) as total FROM users'
-    );
-    
-    return {
-        users: rows,
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-    };
+    try {
+        // Convert to numbers
+        const pageNum = parseInt(page, 10);
+        const limitNum = parseInt(limit, 10);
+        const offsetNum = (pageNum - 1) * limitNum;
+        
+        console.log('User.findAllPaginated called with:', { page: pageNum, limit: limitNum, offset: offsetNum });
+        
+        // Use direct values for LIMIT/OFFSET
+        const [rows] = await db.execute(
+            `SELECT id, name, email, phone, address, role, 
+                    profile_image, is_active, created_at, updated_at 
+             FROM users 
+             ORDER BY created_at DESC 
+             LIMIT ${limitNum} OFFSET ${offsetNum}`
+        );
+        
+        // Get total count
+        const [[{ total }]] = await db.execute('SELECT COUNT(*) as total FROM users');
+        
+        console.log('Found users:', rows.length);
+        console.log('Total users:', total);
+        
+        return {
+            users: rows,
+            total: parseInt(total, 10),
+            page: pageNum,
+            limit: limitNum,
+            totalPages: Math.ceil(total / limitNum)
+        };
+    } catch (error) {
+        console.error('Error in User.findAllPaginated:', error);
+        console.error('Error details:', {
+            message: error.message,
+            code: error.code,
+            sqlState: error.sqlState
+        });
+        throw error;
+    }
 }
 
 // Update user status (activate/deactivate)

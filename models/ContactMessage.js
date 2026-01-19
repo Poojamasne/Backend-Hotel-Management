@@ -17,7 +17,7 @@ class ContactMessage {
   }
 
   // Get all messages (for admin)
-  // In ContactMessage model, update the findAll method:
+  // In models/ContactMessage.js - Update the findAll method
 static async findAll({ page = 1, limit = 10, status = null, search = '' }) {
   try {
     console.log('findAll called with params:', { page, limit, status, search });
@@ -32,13 +32,11 @@ static async findAll({ page = 1, limit = 10, status = null, search = '' }) {
     `;
     
     const params = [];
-    const countParams = [];
     
     // Filter by status - only if status is provided and not 'all'
-    if (status && status !== 'all') {
+    if (status && status !== 'all' && status.trim() !== '') {
       sql += ` AND status = ?`;
       params.push(status);
-      countParams.push(status);
     }
     
     // Search functionality - only if search is provided
@@ -46,30 +44,38 @@ static async findAll({ page = 1, limit = 10, status = null, search = '' }) {
       sql += ` AND (name LIKE ? OR email LIKE ? OR subject LIKE ? OR message LIKE ?)`;
       const searchTerm = `%${search}%`;
       params.push(searchTerm, searchTerm, searchTerm, searchTerm);
-      countParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
     
-    // Order and pagination
+    // Order
     sql += ` ORDER BY created_at DESC`;
     
-    const offset = (page - 1) * limit;
-    sql += ` LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), parseInt(offset));
+    // Convert limit and offset to numbers
+    const limitNum = parseInt(limit, 10);
+    const pageNum = parseInt(page, 10);
+    const offsetNum = (pageNum - 1) * limitNum;
+    
+    // IMPORTANT: For LIMIT and OFFSET, MySQL expects numbers
+    // We'll NOT use prepared statements for these parameters
+    sql += ` LIMIT ${limitNum} OFFSET ${offsetNum}`;
     
     console.log('SQL Query:', sql);
     console.log('SQL Params:', params);
     
     const [messages] = await db.execute(sql, params);
     
-    // Get total count for pagination
+    // Get total count for pagination - separate query
     let countSql = `SELECT COUNT(*) as total FROM contact_messages WHERE 1=1`;
+    const countParams = [];
     
-    if (status && status !== 'all') {
+    if (status && status !== 'all' && status.trim() !== '') {
       countSql += ` AND status = ?`;
+      countParams.push(status);
     }
     
     if (search && search.trim() !== '') {
       countSql += ` AND (name LIKE ? OR email LIKE ? OR subject LIKE ? OR message LIKE ?)`;
+      const searchTerm = `%${search}%`;
+      countParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
     
     console.log('Count SQL:', countSql);
@@ -84,15 +90,21 @@ static async findAll({ page = 1, limit = 10, status = null, search = '' }) {
     return {
       messages,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(total),
-        pages: Math.ceil(total / limit)
+        page: pageNum,
+        limit: limitNum,
+        total: parseInt(total, 10),
+        pages: Math.ceil(total / limitNum)
       }
     };
   } catch (error) {
     console.error('Error in ContactMessage.findAll:', error);
-    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
     throw new Error(`Error fetching contact messages: ${error.message}`);
   }
 }
