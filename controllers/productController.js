@@ -243,10 +243,7 @@ exports.updateProduct = async (req, res) => {
     console.log('=== UPDATE REQUEST DEBUG ===');
     console.log('Product ID:', productId);
     console.log('Request Body:', req.body);
-    console.log('Request Body Keys:', Object.keys(req.body));
-    console.log('Request Body Values:', Object.values(req.body));
     console.log('Request File:', req.file);
-    console.log('Content-Type Header:', req.headers['content-type']);
     
     // Check if product exists
     const existingProduct = await Product.findById(productId);
@@ -257,22 +254,41 @@ exports.updateProduct = async (req, res) => {
       });
     }
     
-    console.log('Existing Product:', existingProduct);
+    console.log('Existing Product Image:', existingProduct.image);
     
     // Start with req.body
     let updateData = { ...req.body };
     
-    // Handle file upload
+    // Handle image upload - FIXED SECTION
     if (req.file) {
+      // New file uploaded
       updateData.image = `/uploads/products/${req.file.filename}`;
-      console.log('New image path:', updateData.image);
-    } else if (existingProduct.image && !updateData.image) {
-      // Keep existing image if no new image provided
+      console.log('Using new uploaded image:', updateData.image);
+    } else if (updateData.image) {
+      // Image URL provided in request body
+      let imageUrl = updateData.image;
+      
+      // Normalize the image path
+      if (imageUrl && !imageUrl.startsWith('/uploads/')) {
+        if (imageUrl.startsWith('products/')) {
+          imageUrl = `/uploads/${imageUrl}`;
+        } else if (imageUrl.startsWith('/images/')) {
+          // Keep as is for now, or change to uploads if you prefer
+          // imageUrl = imageUrl.replace('/images/', '/uploads/');
+        } else if (!imageUrl.startsWith('/') && !imageUrl.startsWith('http')) {
+          // If it's just a filename, prepend path
+          imageUrl = `/uploads/products/${imageUrl}`;
+        }
+        updateData.image = imageUrl;
+      }
+      console.log('Using provided image URL:', updateData.image);
+    } else if (existingProduct.image) {
+      // Keep existing image if no new one provided
       updateData.image = existingProduct.image;
       console.log('Keeping existing image:', updateData.image);
     }
     
-    // 🔥 Parse boolean fields from FormData strings
+    // Parse boolean fields
     if (updateData.is_available !== undefined) {
       updateData.is_available = updateData.is_available === 'true' || updateData.is_available === '1';
     }
@@ -283,12 +299,11 @@ exports.updateProduct = async (req, res) => {
       updateData.is_featured = updateData.is_featured === 'true' || updateData.is_featured === '1';
     }
     
-    // Parse tags and ingredients if they come as strings
+    // Parse arrays
     if (updateData.tags && typeof updateData.tags === 'string') {
       try {
         updateData.tags = JSON.parse(updateData.tags);
       } catch (error) {
-        // If not valid JSON, split by comma
         updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
       }
     }
@@ -306,18 +321,12 @@ exports.updateProduct = async (req, res) => {
       updateData.type = updateData.type.toLowerCase();
     }
     
-    // 🔥 TEMPORARY: Always add some test fields if empty
-    if (Object.keys(updateData).length === 0) {
-      console.log('⚠️ WARNING: No update data received! Adding test fields...');
-      updateData = {
-        name: existingProduct.name + ' (Updated)',
-        price: parseFloat(existingProduct.price) + 10,
-        type: existingProduct.type,
-        image: existingProduct.image
-      };
+    // Convert price to float
+    if (updateData.price) {
+      updateData.price = parseFloat(updateData.price);
     }
     
-    console.log('Final update data to send to Product.update():', updateData);
+    console.log('Final update data:', updateData);
     
     const product = await Product.update(productId, updateData);
     
@@ -329,13 +338,10 @@ exports.updateProduct = async (req, res) => {
     
   } catch (error) {
     console.error('Update product error:', error);
-    console.error('Error stack:', error.stack);
-    
     res.status(500).json({
       success: false,
       message: error.message,
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message
     });
   }
 };
