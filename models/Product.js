@@ -194,111 +194,125 @@ class Product {
         return rows[0];
     }
  
-    // Update product - FIXED VERSION
+// Update product - FIXED VERSION
 static async update(id, updateData) {
-    const fields = [];
-    const values = [];
+  const fields = [];
+  const values = [];
+  
+  console.log('=== PRODUCT MODEL UPDATE DEBUG ===');
+  console.log('Product ID:', id);
+  console.log('Update Data Received:', JSON.stringify(updateData, null, 2));
+  
+  // Process each field
+  for (const [key, value] of Object.entries(updateData)) {
+    console.log(`Processing field: ${key} = ${value} (type: ${typeof value})`);
     
-    console.log('Product.update() called with data:', updateData);
-    console.log('Update data keys:', Object.keys(updateData));
+    // Skip null/undefined/empty strings (but allow false/0)
+    if (value === null || value === undefined || value === '') {
+      console.log(`Skipping field: ${key}`);
+      continue;
+    }
     
-    for (const [key, value] of Object.entries(updateData)) {
-        console.log(`Processing field: ${key} = ${value} (type: ${typeof value})`);
-        
-        // Skip null/undefined values
-        if (value === null || value === undefined || value === '') {
-            console.log(`Skipping empty field: ${key}`);
-            continue;
-        }
-        
-        if (key === 'tags' || key === 'ingredients') {
-            fields.push(`${key} = ?`);
-            if (Array.isArray(value) && value.length > 0) {
-                values.push(JSON.stringify(value));
-            } else if (value) {
-                try {
-                    const parsed = JSON.parse(value);
-                    values.push(JSON.stringify(parsed));
-                } catch {
-                    // If it's a string like "Creamy, Bestseller", convert to array
-                    if (typeof value === 'string' && value.includes(',')) {
-                        const arrayValue = value.split(',').map(item => item.trim());
-                        values.push(JSON.stringify(arrayValue));
-                    } else {
-                        values.push(value);
-                    }
-                }
-            } else {
-                values.push(null);
-            }
-        } else if (key === 'price' || key === 'original_price') {
-            fields.push(`${key} = ?`);
-            values.push(parseFloat(value) || 0);
-        } else if (key === 'category_id') {
-            fields.push(`${key} = ?`);
-            const categoryId = parseInt(value);
-            values.push(categoryId || null);
-            
-            if (categoryId) {
-                try {
-                    const [categoryRows] = await db.execute(
-                        'SELECT slug FROM categories WHERE id = ?',
-                        [categoryId]
-                    );
-                    if (categoryRows.length > 0) {
-                        fields.push('category_slug = ?');
-                        values.push(categoryRows[0].slug);
-                    }
-                } catch (error) {
-                    console.error('Failed to get category slug:', error);
-                }
-            }
-        } else if (key === 'is_available' || key === 'is_popular' || key === 'is_featured') {
-            // Convert boolean to MySQL tinyint
-            fields.push(`${key} = ?`);
-            values.push(value ? 1 : 0);
-        } else if (key === 'type' && value) {
-            // Ensure type is lowercase for ENUM
-            fields.push(`${key} = ?`);
-            values.push(value.toLowerCase());
-        } else if (key === 'category_slug') {
-            // Allow category_slug updates
-            fields.push(`${key} = ?`);
+    if (key === 'tags' || key === 'ingredients') {
+      fields.push(`${key} = ?`);
+      if (Array.isArray(value) && value.length > 0) {
+        values.push(JSON.stringify(value));
+      } else if (value) {
+        // If it's already a stringified JSON
+        if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
+          try {
+            JSON.parse(value);
             values.push(value);
+          } catch {
+            values.push(JSON.stringify([value]));
+          }
         } else {
-            // Allow all other fields
-            fields.push(`${key} = ?`);
-            values.push(value);
+          values.push(JSON.stringify([value]));
         }
+      } else {
+        values.push(null);
+      }
+    } else if (key === 'price' || key === 'original_price') {
+      fields.push(`${key} = ?`);
+      values.push(parseFloat(value) || 0);
+    } else if (key === 'category_id') {
+      fields.push(`${key} = ?`);
+      const categoryId = parseInt(value);
+      values.push(categoryId || null);
+      
+      // Update category_slug if category_id changed
+      if (categoryId) {
+        try {
+          const [categoryRows] = await db.execute(
+            'SELECT slug FROM categories WHERE id = ?',
+            [categoryId]
+          );
+          if (categoryRows.length > 0) {
+            fields.push('category_slug = ?');
+            values.push(categoryRows[0].slug);
+          }
+        } catch (error) {
+          console.error('Failed to get category slug:', error);
+        }
+      }
+    } else if (key === 'is_available' || key === 'is_popular' || key === 'is_featured') {
+      fields.push(`${key} = ?`);
+      // Convert boolean to MySQL tinyint (1 or 0)
+      const boolValue = value === true || value === 'true' || value === '1' || value === 1;
+      values.push(boolValue ? 1 : 0);
+      console.log(`Boolean ${key} converted to:`, boolValue ? 1 : 0);
+    } else if (key === 'type' && value) {
+      fields.push(`${key} = ?`);
+      values.push(value.toString().toLowerCase());
+    } else if (key === 'image') {
+      // Handle image path - ensure it's stored correctly
+      fields.push(`${key} = ?`);
+      
+      // Normalize image path
+      let imagePath = value;
+      if (imagePath && !imagePath.startsWith('/uploads/') && !imagePath.startsWith('http')) {
+        if (imagePath.startsWith('products/')) {
+          imagePath = `/uploads/${imagePath}`;
+        } else if (!imagePath.startsWith('/')) {
+          imagePath = `/uploads/products/${imagePath}`;
+        }
+      }
+      values.push(imagePath);
+      console.log(`Image path stored: ${imagePath}`);
+    } else {
+      // Handle all other fields (name, description, etc.)
+      fields.push(`${key} = ?`);
+      values.push(value);
     }
+  }
+  
+  // Always update updated_at
+  fields.push('updated_at = NOW()');
+  
+  // Add ID at the end for WHERE clause
+  values.push(id);
+  
+  console.log('Fields to update:', fields);
+  console.log('Values:', values);
+  
+  if (fields.length === 0) {
+    throw new Error('No valid fields to update');
+  }
+  
+  const sql = `UPDATE products SET ${fields.join(', ')} WHERE id = ?`;
+  console.log('Executing SQL:', sql);
+  
+  try {
+    const [result] = await db.execute(sql, values);
+    console.log('Update successful. Rows affected:', result.affectedRows);
     
-    // Always update updated_at
-    fields.push('updated_at = NOW()');
-    
-    values.push(id);
-    
-    // 🔥 FIXED: Less strict validation
-    if (fields.length === 0) { // No fields at all (not even updated_at)
-        console.error('No fields to update after processing');
-        throw new Error('No valid fields to update after processing');
-    }
-    
-    console.log('Update SQL fields:', fields);
-    console.log('Update SQL values:', values);
-    
-    // 🔥 DEBUG: Show the actual SQL query
-    const sql = `UPDATE products SET ${fields.join(', ')} WHERE id = ?`;
-    console.log('Executing SQL:', sql);
-    
-    try {
-        await db.execute(sql, values);
-        console.log('Update successful');
-        return this.findById(id);
-    } catch (error) {
-        console.error('Database update error:', error);
-        console.error('SQL error message:', error.sqlMessage);
-        throw error;
-    }
+    // Return the updated product
+    return await this.findById(id);
+  } catch (error) {
+    console.error('Database update error:', error);
+    console.error('SQL error:', error.sqlMessage);
+    throw error;
+  }
 }
 
     // Delete product (soft delete - set is_available to false)

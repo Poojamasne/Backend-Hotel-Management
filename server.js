@@ -27,6 +27,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Serve static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/products', express.static(path.join(__dirname, 'uploads/products')));
 app.use('/images', express.static(path.join(__dirname, 'images')));
 
 // Import routes

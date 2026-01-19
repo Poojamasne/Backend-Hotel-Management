@@ -242,8 +242,9 @@ exports.updateProduct = async (req, res) => {
     
     console.log('=== UPDATE REQUEST DEBUG ===');
     console.log('Product ID:', productId);
-    console.log('Request Body:', req.body);
+    console.log('Request Body (form-data):', req.body);
     console.log('Request File:', req.file);
+    console.log('Request Body Keys:', Object.keys(req.body));
     
     // Check if product exists
     const existingProduct = await Product.findById(productId);
@@ -254,65 +255,72 @@ exports.updateProduct = async (req, res) => {
       });
     }
     
-    console.log('Existing Product Image:', existingProduct.image);
+    console.log('Existing Product:', {
+      id: existingProduct.id,
+      name: existingProduct.name,
+      image: existingProduct.image
+    });
     
-    // Start with req.body
-    let updateData = { ...req.body };
+    // Start with req.body (which contains form-data fields)
+    let updateData = {};
     
-    // Handle image upload - FIXED SECTION
-    if (req.file) {
-      // New file uploaded
-      updateData.image = `/uploads/products/${req.file.filename}`;
-      console.log('Using new uploaded image:', updateData.image);
-    } else if (updateData.image) {
-      // Image URL provided in request body
-      let imageUrl = updateData.image;
-      
-      // Normalize the image path
-      if (imageUrl && !imageUrl.startsWith('/uploads/')) {
-        if (imageUrl.startsWith('products/')) {
-          imageUrl = `/uploads/${imageUrl}`;
-        } else if (imageUrl.startsWith('/images/')) {
-          // Keep as is for now, or change to uploads if you prefer
-          // imageUrl = imageUrl.replace('/images/', '/uploads/');
-        } else if (!imageUrl.startsWith('/') && !imageUrl.startsWith('http')) {
-          // If it's just a filename, prepend path
-          imageUrl = `/uploads/products/${imageUrl}`;
-        }
-        updateData.image = imageUrl;
+    // Copy all fields from req.body except empty strings
+    for (const [key, value] of Object.entries(req.body)) {
+      if (value !== undefined && value !== null && value !== '') {
+        updateData[key] = value;
       }
+    }
+    
+    console.log('Initial updateData from form:', updateData);
+    
+    // Handle image upload
+    if (req.file) {
+      updateData.image = `/uploads/products/${req.file.filename}`;
+      console.log('✅ New image uploaded:', updateData.image);
+    } else if (req.body.image && req.body.image !== 'undefined') {
+      // If image field exists in form-data (might be a URL string)
+      updateData.image = req.body.image;
       console.log('Using provided image URL:', updateData.image);
     } else if (existingProduct.image) {
-      // Keep existing image if no new one provided
+      // Keep existing image
       updateData.image = existingProduct.image;
       console.log('Keeping existing image:', updateData.image);
     }
     
-    // Parse boolean fields
+    // Parse boolean fields from form-data strings
     if (updateData.is_available !== undefined) {
-      updateData.is_available = updateData.is_available === 'true' || updateData.is_available === '1';
-    }
-    if (updateData.is_popular !== undefined) {
-      updateData.is_popular = updateData.is_popular === 'true' || updateData.is_popular === '1';
-    }
-    if (updateData.is_featured !== undefined) {
-      updateData.is_featured = updateData.is_featured === 'true' || updateData.is_featured === '1';
+      updateData.is_available = updateData.is_available === 'true' || updateData.is_available === '1' || updateData.is_available === true;
+      console.log('is_available parsed:', updateData.is_available);
     }
     
-    // Parse arrays
-    if (updateData.tags && typeof updateData.tags === 'string') {
+    if (updateData.is_popular !== undefined) {
+      updateData.is_popular = updateData.is_popular === 'true' || updateData.is_popular === '1' || updateData.is_popular === true;
+      console.log('is_popular parsed:', updateData.is_popular);
+    }
+    
+    if (updateData.is_featured !== undefined) {
+      updateData.is_featured = updateData.is_featured === 'true' || updateData.is_featured === '1' || updateData.is_featured === true;
+      console.log('is_featured parsed:', updateData.is_featured);
+    }
+    
+    // Parse tags and ingredients from form-data strings
+    if (updateData.tags) {
       try {
         updateData.tags = JSON.parse(updateData.tags);
       } catch (error) {
-        updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
+        if (typeof updateData.tags === 'string') {
+          updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
+        }
       }
     }
     
-    if (updateData.ingredients && typeof updateData.ingredients === 'string') {
+    if (updateData.ingredients) {
       try {
         updateData.ingredients = JSON.parse(updateData.ingredients);
       } catch (error) {
-        updateData.ingredients = updateData.ingredients.split(',').map(ing => ing.trim());
+        if (typeof updateData.ingredients === 'string') {
+          updateData.ingredients = updateData.ingredients.split(',').map(ing => ing.trim());
+        }
       }
     }
     
@@ -321,14 +329,34 @@ exports.updateProduct = async (req, res) => {
       updateData.type = updateData.type.toLowerCase();
     }
     
-    // Convert price to float
+    // Convert numeric fields
     if (updateData.price) {
       updateData.price = parseFloat(updateData.price);
     }
     
-    console.log('Final update data:', updateData);
+    if (updateData.original_price) {
+      updateData.original_price = parseFloat(updateData.original_price);
+    }
     
+    if (updateData.category_id) {
+      updateData.category_id = parseInt(updateData.category_id);
+    }
+    
+    console.log('Final updateData before sending to model:', JSON.stringify(updateData, null, 2));
+    console.log('Number of fields:', Object.keys(updateData).length);
+    
+    // Check if we have data to update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No data provided for update'
+      });
+    }
+    
+    // Call the model's update method
     const product = await Product.update(productId, updateData);
+    
+    console.log('✅ Update successful! Product ID:', product.id);
     
     res.json({
       success: true,
@@ -337,15 +365,17 @@ exports.updateProduct = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Update product error:', error);
+    console.error('❌ Update product error:', error.message);
+    console.error('Error stack:', error.stack);
+    
     res.status(500).json({
       success: false,
       message: error.message,
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
-
 
 // @desc    Delete product (Admin only)
 // @route   DELETE /api/admin/products/:id
