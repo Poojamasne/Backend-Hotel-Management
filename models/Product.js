@@ -119,74 +119,67 @@ class Product {
     }
     
     // Get all products with filters
-    // Get all products with filters
-static async findAll(filters = {}) {
-    let query = `
-        SELECT p.*, c.name as category_name, c.slug as category_slug 
-        FROM products p 
-        LEFT JOIN categories c ON p.category_id = c.id 
-        WHERE 1=1
-    `;
-    const values = [];
-    
-    if (filters.category_id) {
-        query += ' AND p.category_id = ?';
-        values.push(filters.category_id);
-    }
-    
-    if (filters.category_slug) {
-        query += ' AND p.category_slug = ?';
-        values.push(filters.category_slug);
-    }
-    
-    if (filters.type) {
-        query += ' AND p.type = ?';
-        values.push(filters.type);
-    }
-    
-    if (filters.is_popular) {
-        query += ' AND p.is_popular = TRUE';
-    }
-    
-    if (filters.is_featured) {
-        query += ' AND p.is_featured = TRUE';
-    }
-    
-    // Only show available items by default
-    if (filters.show_all !== 'true') {
-        query += ' AND p.is_available = TRUE';
-    }
-    
-    // Sorting
-    if (filters.sort_by) {
-        const sortMap = {
-            'price_low': 'p.price ASC',
-            'price_high': 'p.price DESC',
-            'popular': 'p.rating DESC',
-            'newest': 'p.created_at DESC',
-            'name': 'p.name ASC'
-        };
-        query += ` ORDER BY ${sortMap[filters.sort_by] || 'p.created_at DESC'}`;
-    } else {
-        query += ' ORDER BY p.is_popular DESC, p.created_at DESC';
-    }
-
-    // ✅ FIXED: Proper pagination with correct indentation
-    if (filters.limit) {
-        query += ' LIMIT ?';
-        values.push(parseInt(filters.limit));
+    static async findAll(filters = {}) {
+        let query = `
+            SELECT p.*, c.name as category_name, c.slug as category_slug 
+            FROM products p 
+            LEFT JOIN categories c ON p.category_id = c.id 
+            WHERE 1=1
+        `;
+        const values = [];
         
-        // ✅ Add offset if provided
-        if (filters.offset !== undefined) {
-            query += ' OFFSET ?';
-            values.push(parseInt(filters.offset));
+        if (filters.category_id) {
+            query += ' AND p.category_id = ?';
+            values.push(filters.category_id);
         }
+        
+        if (filters.category_slug) {
+            query += ' AND p.category_slug = ?';
+            values.push(filters.category_slug);
+        }
+        
+        if (filters.type) {
+            query += ' AND p.type = ?';
+            values.push(filters.type);
+        }
+        
+        if (filters.is_popular) {
+            query += ' AND p.is_popular = TRUE';
+        }
+        
+        if (filters.is_featured) {
+            query += ' AND p.is_featured = TRUE';
+        }
+        
+        // Only show available items by default
+        if (filters.show_all !== 'true') {
+            query += ' AND p.is_available = TRUE';
+        }
+        
+        // Sorting
+        if (filters.sort_by) {
+            const sortMap = {
+                'price_low': 'p.price ASC',
+                'price_high': 'p.price DESC',
+                'popular': 'p.rating DESC',
+                'newest': 'p.created_at DESC',
+                'name': 'p.name ASC'
+            };
+            query += ` ORDER BY ${sortMap[filters.sort_by] || 'p.created_at DESC'}`;
+        } else {
+            query += ' ORDER BY p.is_popular DESC, p.created_at DESC';
+        }
+        
+        // Pagination
+        if (filters.limit) {
+            query += ' LIMIT ?';
+            values.push(parseInt(filters.limit));
+        }
+        
+        console.log('Product query:', query, values);
+        const [rows] = await db.execute(query, values);
+        return rows;
     }
-    
-    console.log('Product query with pagination:', query, values);
-    const [rows] = await db.execute(query, values);
-    return rows;
-}
     
     // Find product by ID
     static async findById(id) {

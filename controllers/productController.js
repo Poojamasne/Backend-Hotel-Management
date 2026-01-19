@@ -4,60 +4,22 @@ const Product = require('../models/Product');
 // @route   GET /api/products
 exports.getAllProducts = async (req, res) => {
     try {
-        const { page = 1, limit = 10, search, category, show_all } = req.query;
-        console.log('Getting products with pagination:', { page, limit, search, category });
+        const filters = req.query;
+        console.log('Getting products with filters:', filters);
         
-        // Convert to numbers
-        const pageNum = parseInt(page);
-        const limitNum = parseInt(limit);
-        const offset = (pageNum - 1) * limitNum;
-        
-        // Build filters object for Product.findAll
-        const filters = {};
-        if (category && category !== 'All') {
-            filters.category_slug = category.toLowerCase().replace(/\s+/g, '-');
-        }
-        if (show_all) {
-            filters.show_all = show_all;
-        }
-        if (req.query.type) {
-            filters.type = req.query.type;
-        }
-        
-        // ✅ FIX: First get total count WITHOUT limit for pagination
-        const allProducts = await Product.findAll({ ...filters, show_all: 'true' });
-        const totalItems = allProducts.length;
-        
-        // ✅ FIX: Get paginated results WITH limit and offset
-        const products = await Product.findAll({ 
-            ...filters, 
-            show_all: show_all || 'false',
-            limit: limitNum,
-            offset: offset
-        });
+        const products = await Product.findAll(filters);
         
         res.json({
             success: true,
-            data: {
-                products: products,
-                total: totalItems,
-                page: pageNum,
-                pages: Math.ceil(totalItems / limitNum),
-                limit: limitNum
-            }
+            count: products.length,
+            data: products
         });
     } catch (error) {
         console.error('Get products error:', error);
-        // ✅ ADD: Log the SQL error if available
-        if (error.sqlMessage) {
-            console.error('SQL Error:', error.sqlMessage);
-            console.error('SQL Query:', error.sql);
-        }
         res.status(500).json({
             success: false,
             message: 'Server error',
-            error: error.message,
-            sqlError: process.env.NODE_ENV === 'development' ? error.sqlMessage : undefined
+            error: error.message
         });
     }
 };
