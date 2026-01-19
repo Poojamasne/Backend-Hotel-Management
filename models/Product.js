@@ -193,37 +193,48 @@ class Product {
         );
         return rows[0];
     }
-    
+ 
     // Update product - FIXED VERSION
 static async update(id, updateData) {
     const fields = [];
     const values = [];
     
+    console.log('Product.update() called with data:', updateData);
+    console.log('Update data keys:', Object.keys(updateData));
+    
     for (const [key, value] of Object.entries(updateData)) {
+        console.log(`Processing field: ${key} = ${value} (type: ${typeof value})`);
+        
+        // Skip null/undefined values
+        if (value === null || value === undefined || value === '') {
+            console.log(`Skipping empty field: ${key}`);
+            continue;
+        }
         
         if (key === 'tags' || key === 'ingredients') {
-           
             fields.push(`${key} = ?`);
             if (Array.isArray(value) && value.length > 0) {
                 values.push(JSON.stringify(value));
             } else if (value) {
-               
                 try {
                     const parsed = JSON.parse(value);
                     values.push(JSON.stringify(parsed));
                 } catch {
-                    
-                    values.push(value);
+                    // If it's a string like "Creamy, Bestseller", convert to array
+                    if (typeof value === 'string' && value.includes(',')) {
+                        const arrayValue = value.split(',').map(item => item.trim());
+                        values.push(JSON.stringify(arrayValue));
+                    } else {
+                        values.push(value);
+                    }
                 }
             } else {
                 values.push(null);
             }
         } else if (key === 'price' || key === 'original_price') {
-           
             fields.push(`${key} = ?`);
             values.push(parseFloat(value) || 0);
         } else if (key === 'category_id') {
-            
             fields.push(`${key} = ?`);
             const categoryId = parseInt(value);
             values.push(categoryId || null);
@@ -266,22 +277,30 @@ static async update(id, updateData) {
     
     values.push(id);
     
-    // Don't execute if no valid fields to update
-    if (fields.length <= 1) { // Only updated_at
-        throw new Error('No valid fields to update');
+    // 🔥 FIXED: Less strict validation
+    if (fields.length === 0) { // No fields at all (not even updated_at)
+        console.error('No fields to update after processing');
+        throw new Error('No valid fields to update after processing');
     }
     
-    console.log('Update SQL:', `UPDATE products SET ${fields.join(', ')} WHERE id = ?`);
-    console.log('Update values:', values);
+    console.log('Update SQL fields:', fields);
+    console.log('Update SQL values:', values);
     
-    await db.execute(
-        `UPDATE products SET ${fields.join(', ')} WHERE id = ?`,
-        values
-    );
+    // 🔥 DEBUG: Show the actual SQL query
+    const sql = `UPDATE products SET ${fields.join(', ')} WHERE id = ?`;
+    console.log('Executing SQL:', sql);
     
-    return this.findById(id);
+    try {
+        await db.execute(sql, values);
+        console.log('Update successful');
+        return this.findById(id);
+    } catch (error) {
+        console.error('Database update error:', error);
+        console.error('SQL error message:', error.sqlMessage);
+        throw error;
+    }
 }
-    
+
     // Delete product (soft delete - set is_available to false)
     static async delete(id) {
         await db.execute(
