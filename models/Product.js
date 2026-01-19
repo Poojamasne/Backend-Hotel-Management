@@ -10,36 +10,51 @@ class Product {
         } = productData;
         
         console.log('Creating product with data:', {
-            name, description, price, category_id, category_slug, image, type
+            name, description, price, category_id, category_slug, type,
+            is_available, is_popular, is_featured
         });
         
-        const [result] = await db.execute(
-            `INSERT INTO products 
-            (name, description, price, original_price, category_id, 
-             category_slug, image, type, tags, prep_time, 
-             ingredients, is_available, is_popular, is_featured,
-             created_at, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-            [
-                name, 
-                description || '', 
-                parseFloat(price), 
-                original_price ? parseFloat(original_price) : null, 
-                parseInt(category_id),
-                category_slug || this.generateSlug(name), 
-                image || '/images/dishes/default-food.jpg', 
-                type, 
-                tags ? JSON.stringify(tags) : null, 
-                prep_time || '15-20 min',
-                ingredients ? JSON.stringify(ingredients) : null, 
-                is_available !== undefined ? is_available : true,
-                is_popular || false, 
-                is_featured || false
-            ]
-        );
+        // Handle boolean values properly
+        const isAvailable = is_available !== undefined ? Boolean(is_available) : true;
+        const isPopular = is_popular !== undefined ? Boolean(is_popular) : false;
+        const isFeatured = is_featured !== undefined ? Boolean(is_featured) : false;
         
-        console.log('Product created with ID:', result.insertId);
-        return this.findById(result.insertId);
+        console.log('Boolean values after processing:', {
+            isAvailable, isPopular, isFeatured
+        });
+        
+        try {
+            const [result] = await db.execute(
+                `INSERT INTO products 
+                (name, description, price, original_price, category_id, 
+                 category_slug, image, type, tags, prep_time, 
+                 ingredients, is_available, is_popular, is_featured,
+                 created_at, updated_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [
+                    name, 
+                    description || '', 
+                    parseFloat(price), 
+                    original_price ? parseFloat(original_price) : null, 
+                    parseInt(category_id),
+                    category_slug || this.generateSlug(name), 
+                    image || null, // Don't use default image
+                    type, 
+                    tags ? JSON.stringify(tags) : null, 
+                    prep_time || '15-20 min',
+                    ingredients ? JSON.stringify(ingredients) : null, 
+                    isAvailable ? 1 : 0, // Convert boolean to MySQL tinyint (1 or 0)
+                    isPopular ? 1 : 0, // Convert boolean to MySQL tinyint (1 or 0)
+                    isFeatured ? 1 : 0  // Convert boolean to MySQL tinyint (1 or 0)
+                ]
+            );
+            
+            console.log('Product created with ID:', result.insertId);
+            return this.findById(result.insertId);
+        } catch (error) {
+            console.error('Database error in Product.create:', error);
+            throw error;
+        }
     }
     
     // Helper to generate slug
@@ -142,6 +157,10 @@ class Product {
                 // Convert to integer
                 fields.push(`${key} = ?`);
                 values.push(parseInt(value));
+            } else if (key === 'is_available' || key === 'is_popular' || key === 'is_featured') {
+                // Convert boolean to MySQL tinyint
+                fields.push(`${key} = ?`);
+                values.push(value ? 1 : 0);
             } else {
                 fields.push(`${key} = ?`);
                 values.push(value);
@@ -152,6 +171,8 @@ class Product {
         fields.push('updated_at = NOW()');
         
         values.push(id);
+        
+        console.log('Update query:', `UPDATE products SET ${fields.join(', ')} WHERE id = ?`, values);
         
         await db.execute(
             `UPDATE products SET ${fields.join(', ')} WHERE id = ?`,

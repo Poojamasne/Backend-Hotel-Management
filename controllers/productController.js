@@ -95,11 +95,12 @@ exports.searchProducts = async (req, res) => {
     }
 };
 
+
 // @desc    Create product (Admin only)
 // @route   POST /api/admin/products
 exports.createProduct = async (req, res) => {
     try {
-        console.log('Create product request body:', req.body);
+        console.log('Create product request body:', JSON.stringify(req.body, null, 2));
         
         const {
             name, description, price, original_price, category_id,
@@ -116,17 +117,21 @@ exports.createProduct = async (req, res) => {
             });
         }
         
-        // Convert boolean values properly
-        const isAvailable = is_available !== undefined ? 
-            (is_available === true || is_available === 'true') : true;
-        const isPopular = is_popular !== undefined ? 
-            (is_popular === true || is_popular === 'true') : false;
-        const isFeatured = is_featured !== undefined ? 
-            (is_featured === true || is_featured === 'true') : false;
-        
-        console.log('Creating product with processed data:', {
-            name, description, price, category_id, type,
-            is_available: isAvailable, is_popular: isPopular, is_featured: isFeatured
+        console.log('Creating product with data:', {
+            name,
+            description: description || '',
+            price: parseFloat(price),
+            original_price: original_price ? parseFloat(original_price) : null,
+            category_id: parseInt(category_id),
+            category_slug: category_slug || null,
+            image: image || null,
+            type,
+            tags: tags || [],
+            prep_time: prep_time || '15-20 min',
+            ingredients: ingredients || [],
+            is_available: is_available !== undefined ? Boolean(is_available) : true,
+            is_popular: is_popular !== undefined ? Boolean(is_popular) : false,
+            is_featured: is_featured !== undefined ? Boolean(is_featured) : false
         });
         
         const product = await Product.create({
@@ -136,14 +141,14 @@ exports.createProduct = async (req, res) => {
             original_price: original_price ? parseFloat(original_price) : null,
             category_id: parseInt(category_id),
             category_slug: category_slug || null,
-            image: image || '/images/dishes/default-food.jpg',
+            image: image || null,
             type,
             tags: tags || [],
             prep_time: prep_time || '15-20 min',
             ingredients: ingredients || [],
-            is_available: isAvailable,
-            is_popular: isPopular,
-            is_featured: isFeatured
+            is_available: is_available !== undefined ? Boolean(is_available) : true,
+            is_popular: is_popular !== undefined ? Boolean(is_popular) : false,
+            is_featured: is_featured !== undefined ? Boolean(is_featured) : false
         });
         
         console.log('Product created successfully:', product.id);
@@ -155,10 +160,40 @@ exports.createProduct = async (req, res) => {
         });
     } catch (error) {
         console.error('Create product error:', error);
+        console.error('Error stack:', error.stack);
+        console.error('Error code:', error.code);
+        console.error('Error sqlMessage:', error.sqlMessage);
+        console.error('Error sql:', error.sql);
+        
+        // Handle specific MySQL errors
+        if (error.code === 'ER_NO_REFERENCED_ROW_2') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid category_id. The category does not exist.'
+            });
+        }
+        
+        if (error.code === 'ER_BAD_FIELD_ERROR') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid field in request. Please check your data.',
+                field: error.sqlMessage
+            });
+        }
+        
+        if (error.code === 'ER_DATA_TOO_LONG') {
+            return res.status(400).json({
+                success: false,
+                message: 'Data too long for a field. Please check your input.',
+                field: error.sqlMessage
+            });
+        }
+        
         res.status(500).json({
             success: false,
             message: 'Server error',
             error: error.message,
+            sqlError: process.env.NODE_ENV === 'development' ? error.sqlMessage : undefined,
             stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
