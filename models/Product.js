@@ -73,7 +73,31 @@ class Product {
             );
             
             console.log('Product created with ID:', result.insertId);
-            return this.findById(result.insertId);
+            
+            // Return the created product directly without calling findById
+            return {
+                id: result.insertId,
+                name: name,
+                description: description || '',
+                price: parseFloat(price),
+                original_price: original_price ? parseFloat(original_price) : null,
+                category_id: parseInt(category_id),
+                category_slug: categorySlug,
+                image: image || null,
+                type: type.toLowerCase(),
+                tags: tagsArray,
+                prep_time: prep_time || '15-20 min',
+                ingredients: ingredientsArray,
+                is_available: isAvailable ? 1 : 0,
+                is_popular: isPopular ? 1 : 0,
+                is_featured: isFeatured ? 1 : 0,
+                rating: 0.0,
+                rating_count: 0,
+                total_orders: 0,
+                created_at: new Date(),
+                updated_at: new Date()
+            };
+            
         } catch (error) {
             console.error('Database error in Product.create:', error);
             if (error.sqlMessage) {
