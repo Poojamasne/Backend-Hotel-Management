@@ -194,51 +194,53 @@ class Product {
         return rows[0];
     }
     
-    // Update product
+    // Update product - FIXED VERSION
 static async update(id, updateData) {
     const fields = [];
     const values = [];
     
-    // List of valid product columns that can be updated
-    const validColumns = [
-        'name', 'description', 'price', 'original_price', 'category_id',
-        'category_slug', 'image', 'type', 'tags', 'prep_time',
-        'ingredients', 'is_available', 'is_popular', 'is_featured'
-    ];
-    
     for (const [key, value] of Object.entries(updateData)) {
-        // Skip invalid columns (like category_name which comes from JOIN)
-        if (!validColumns.includes(key)) {
-            console.warn(`Skipping invalid column for update: ${key}`);
-            continue;
-        }
         
         if (key === 'tags' || key === 'ingredients') {
-            // Convert arrays to JSON strings
+           
             fields.push(`${key} = ?`);
-            values.push(value && Array.isArray(value) && value.length > 0 ? JSON.stringify(value) : null);
-        } else if (key === 'price' || key === 'original_price') {
-            // Convert to float
-            fields.push(`${key} = ?`);
-            values.push(parseFloat(value));
-        } else if (key === 'category_id') {
-            // Convert to integer
-            fields.push(`${key} = ?`);
-            values.push(parseInt(value));
-            
-            // If category_id changes, we should also update category_slug
-            // You need to get the new category slug from categories table
-            try {
-                const [categoryRows] = await db.execute(
-                    'SELECT slug FROM categories WHERE id = ?',
-                    [parseInt(value)]
-                );
-                if (categoryRows.length > 0) {
-                    fields.push('category_slug = ?');
-                    values.push(categoryRows[0].slug);
+            if (Array.isArray(value) && value.length > 0) {
+                values.push(JSON.stringify(value));
+            } else if (value) {
+               
+                try {
+                    const parsed = JSON.parse(value);
+                    values.push(JSON.stringify(parsed));
+                } catch {
+                    
+                    values.push(value);
                 }
-            } catch (error) {
-                console.error('Failed to get category slug:', error);
+            } else {
+                values.push(null);
+            }
+        } else if (key === 'price' || key === 'original_price') {
+           
+            fields.push(`${key} = ?`);
+            values.push(parseFloat(value) || 0);
+        } else if (key === 'category_id') {
+            
+            fields.push(`${key} = ?`);
+            const categoryId = parseInt(value);
+            values.push(categoryId || null);
+            
+            if (categoryId) {
+                try {
+                    const [categoryRows] = await db.execute(
+                        'SELECT slug FROM categories WHERE id = ?',
+                        [categoryId]
+                    );
+                    if (categoryRows.length > 0) {
+                        fields.push('category_slug = ?');
+                        values.push(categoryRows[0].slug);
+                    }
+                } catch (error) {
+                    console.error('Failed to get category slug:', error);
+                }
             }
         } else if (key === 'is_available' || key === 'is_popular' || key === 'is_featured') {
             // Convert boolean to MySQL tinyint
@@ -248,7 +250,12 @@ static async update(id, updateData) {
             // Ensure type is lowercase for ENUM
             fields.push(`${key} = ?`);
             values.push(value.toLowerCase());
+        } else if (key === 'category_slug') {
+            // Allow category_slug updates
+            fields.push(`${key} = ?`);
+            values.push(value);
         } else {
+            // Allow all other fields
             fields.push(`${key} = ?`);
             values.push(value);
         }
@@ -264,8 +271,8 @@ static async update(id, updateData) {
         throw new Error('No valid fields to update');
     }
     
-    console.log('Update query fields:', fields);
-    console.log('Update query values:', values);
+    console.log('Update SQL:', `UPDATE products SET ${fields.join(', ')} WHERE id = ?`);
+    console.log('Update values:', values);
     
     await db.execute(
         `UPDATE products SET ${fields.join(', ')} WHERE id = ?`,

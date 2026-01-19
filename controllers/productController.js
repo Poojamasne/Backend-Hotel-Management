@@ -239,64 +239,70 @@ exports.createProduct = async (req, res) => {
 exports.updateProduct = async (req, res) => {
     try {
         const productId = req.params.id;
-        const updateData = req.body;
         
-        console.log('Update product request:', productId);
-        console.log('Update data:', updateData);
-        console.log('File received:', req.file); // Log the uploaded file
+        console.log('=== UPDATE REQUEST START ===');
+        console.log('Product ID:', productId);
+        console.log('Request Body:', req.body);
+        console.log('Request File:', req.file);
         
-        // Check if product exists
+        // Check if product exists FIRST
         const existingProduct = await Product.findById(productId);
         if (!existingProduct) {
+            console.log('Product not found:', productId);
             return res.status(404).json({
                 success: false,
                 message: 'Product not found'
             });
         }
         
-        // Handle file upload if new image is provided
+        console.log('Existing product image:', existingProduct.image);
+        
+        // Start with req.body
+        let updateData = { ...req.body };
+        
+        // 🔥 CRITICAL FIX: Handle image properly
         if (req.file) {
+            // New image uploaded
             updateData.image = `/uploads/products/${req.file.filename}`;
-            console.log('New image path:', updateData.image);
-        } else if (updateData.image === '') {
-            // If image is explicitly set to empty string, keep existing
-            delete updateData.image;
+            console.log('New image uploaded:', updateData.image);
+        } else {
+            // No new image - KEEP EXISTING IMAGE
+            updateData.image = existingProduct.image;
+            console.log('Keeping existing image:', updateData.image);
         }
         
-        // Parse tags and ingredients if they come as strings
+        console.log('Update data before processing:', updateData);
+        
+        // Parse boolean fields (FormData sends them as strings)
+        if (updateData.is_available !== undefined) {
+            updateData.is_available = updateData.is_available === 'true' || updateData.is_available === '1';
+        }
+        if (updateData.is_popular !== undefined) {
+            updateData.is_popular = updateData.is_popular === 'true' || updateData.is_popular === '1';
+        }
+        if (updateData.is_featured !== undefined) {
+            updateData.is_featured = updateData.is_featured === 'true' || updateData.is_featured === '1';
+        }
+        
+        // Parse tags and ingredients
         if (updateData.tags) {
             try {
                 updateData.tags = JSON.parse(updateData.tags);
+                console.log('Parsed tags as JSON:', updateData.tags);
             } catch (error) {
-                updateData.tags = Array.isArray(updateData.tags) ? updateData.tags : 
-                                 updateData.tags.split(',').map(tag => tag.trim());
+                console.log('Parsing tags as CSV:', updateData.tags);
+                updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
             }
         }
         
         if (updateData.ingredients) {
             try {
                 updateData.ingredients = JSON.parse(updateData.ingredients);
+                console.log('Parsed ingredients as JSON:', updateData.ingredients);
             } catch (error) {
-                updateData.ingredients = Array.isArray(updateData.ingredients) ? updateData.ingredients : 
-                                       updateData.ingredients.split(',').map(ing => ing.trim());
+                console.log('Parsing ingredients as CSV:', updateData.ingredients);
+                updateData.ingredients = updateData.ingredients.split(',').map(ing => ing.trim());
             }
-        }
-        
-        // Handle boolean conversions
-        if (updateData.is_available !== undefined) {
-            updateData.is_available = updateData.is_available === true || 
-                                     updateData.is_available === 'true' || 
-                                     updateData.is_available === '1';
-        }
-        if (updateData.is_popular !== undefined) {
-            updateData.is_popular = updateData.is_popular === true || 
-                                   updateData.is_popular === 'true' || 
-                                   updateData.is_popular === '1';
-        }
-        if (updateData.is_featured !== undefined) {
-            updateData.is_featured = updateData.is_featured === true || 
-                                    updateData.is_featured === 'true' || 
-                                    updateData.is_featured === '1';
         }
         
         // Validate type if provided
@@ -311,11 +317,18 @@ exports.updateProduct = async (req, res) => {
             updateData.type = productType;
         }
         
-        console.log('Processed update data:', updateData);
+        // 🔥 ENSURE REQUIRED FIELDS ARE PRESENT
+        if (!updateData.name) updateData.name = existingProduct.name;
+        if (!updateData.price) updateData.price = existingProduct.price;
+        if (!updateData.type) updateData.type = existingProduct.type;
+        if (!updateData.image) updateData.image = existingProduct.image; // This is critical!
+        
+        console.log('Final update data:', updateData);
         
         const product = await Product.update(productId, updateData);
         
         console.log('Product updated successfully');
+        console.log('=== UPDATE REQUEST END ===');
         
         res.json({
             success: true,
@@ -324,14 +337,25 @@ exports.updateProduct = async (req, res) => {
         });
     } catch (error) {
         console.error('Update product error:', error);
+        console.error('Error code:', error.code);
+        console.error('Error sqlMessage:', error.sqlMessage);
         console.error('Error stack:', error.stack);
         
         // Handle specific MySQL errors
+        if (error.code === 'ER_BAD_NULL_ERROR') {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required field (image, name, price, or type)',
+                error: error.sqlMessage
+            });
+        }
+        
         if (error.code === 'ER_BAD_FIELD_ERROR') {
+            console.error('MySQL bad field error:', error.sqlMessage);
             return res.status(400).json({
                 success: false,
                 message: 'Invalid field in update request',
-                error: error.sqlMessage
+                field: error.sqlMessage
             });
         }
         
@@ -343,6 +367,7 @@ exports.updateProduct = async (req, res) => {
         });
     }
 };
+
 
 // @desc    Delete product (Admin only)
 // @route   DELETE /api/admin/products/:id
