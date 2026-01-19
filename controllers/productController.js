@@ -5,6 +5,8 @@ const Product = require('../models/Product');
 exports.getAllProducts = async (req, res) => {
     try {
         const filters = req.query;
+        console.log('Getting products with filters:', filters);
+        
         const products = await Product.findAll(filters);
         
         res.json({
@@ -97,34 +99,54 @@ exports.searchProducts = async (req, res) => {
 // @route   POST /api/admin/products
 exports.createProduct = async (req, res) => {
     try {
+        console.log('Create product request body:', req.body);
+        
         const {
             name, description, price, original_price, category_id,
             category_slug, image, type, tags, prep_time,
-            ingredients, is_popular, is_featured
+            ingredients, is_available, is_popular, is_featured
         } = req.body;
         
-        if (!name || !description || !price || !category_id || !image || !type) {
+        // Validate required fields
+        if (!name || !price || !category_id || !type) {
+            console.log('Missing required fields:', { name, price, category_id, type });
             return res.status(400).json({
                 success: false,
-                message: 'Required fields are missing'
+                message: 'Required fields: name, price, category_id, type'
             });
         }
         
+        // Convert boolean values properly
+        const isAvailable = is_available !== undefined ? 
+            (is_available === true || is_available === 'true') : true;
+        const isPopular = is_popular !== undefined ? 
+            (is_popular === true || is_popular === 'true') : false;
+        const isFeatured = is_featured !== undefined ? 
+            (is_featured === true || is_featured === 'true') : false;
+        
+        console.log('Creating product with processed data:', {
+            name, description, price, category_id, type,
+            is_available: isAvailable, is_popular: isPopular, is_featured: isFeatured
+        });
+        
         const product = await Product.create({
             name,
-            description,
+            description: description || '',
             price: parseFloat(price),
             original_price: original_price ? parseFloat(original_price) : null,
             category_id: parseInt(category_id),
-            category_slug,
-            image,
+            category_slug: category_slug || null,
+            image: image || '/images/dishes/default-food.jpg',
             type,
-            tags: tags ? JSON.stringify(tags) : null,
-            prep_time,
-            ingredients: ingredients ? JSON.stringify(ingredients) : null,
-            is_popular: is_popular === 'true',
-            is_featured: is_featured === 'true'
+            tags: tags || [],
+            prep_time: prep_time || '15-20 min',
+            ingredients: ingredients || [],
+            is_available: isAvailable,
+            is_popular: isPopular,
+            is_featured: isFeatured
         });
+        
+        console.log('Product created successfully:', product.id);
         
         res.status(201).json({
             success: true,
@@ -136,7 +158,8 @@ exports.createProduct = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Server error',
-            error: error.message
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 };
@@ -148,6 +171,8 @@ exports.updateProduct = async (req, res) => {
         const productId = req.params.id;
         const updateData = req.body;
         
+        console.log('Update product request:', productId, updateData);
+        
         // Check if product exists
         const existingProduct = await Product.findById(productId);
         if (!existingProduct) {
@@ -157,14 +182,16 @@ exports.updateProduct = async (req, res) => {
             });
         }
         
-        // Convert string values if needed
-        if (updateData.price) updateData.price = parseFloat(updateData.price);
-        if (updateData.original_price) updateData.original_price = parseFloat(updateData.original_price);
-        if (updateData.category_id) updateData.category_id = parseInt(updateData.category_id);
-        if (updateData.tags) updateData.tags = JSON.stringify(updateData.tags);
-        if (updateData.ingredients) updateData.ingredients = JSON.stringify(updateData.ingredients);
-        if (updateData.is_popular) updateData.is_popular = updateData.is_popular === 'true';
-        if (updateData.is_featured) updateData.is_featured = updateData.is_featured === 'true';
+        // Handle boolean conversions
+        if (updateData.is_available !== undefined) {
+            updateData.is_available = updateData.is_available === true || updateData.is_available === 'true';
+        }
+        if (updateData.is_popular !== undefined) {
+            updateData.is_popular = updateData.is_popular === true || updateData.is_popular === 'true';
+        }
+        if (updateData.is_featured !== undefined) {
+            updateData.is_featured = updateData.is_featured === true || updateData.is_featured === 'true';
+        }
         
         const product = await Product.update(productId, updateData);
         
