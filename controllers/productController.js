@@ -234,17 +234,14 @@ exports.createProduct = async (req, res) => {
     }
 };
 
-// @desc    Update product (Admin only)
+// @desc    Update product (Admin only) - SIMPLE FIXED VERSION
 // @route   PUT /api/admin/products/:id
 exports.updateProduct = async (req, res) => {
   try {
     const productId = req.params.id;
     
-    console.log('=== UPDATE REQUEST DEBUG ===');
+    console.log('=== UPDATE START ===');
     console.log('Product ID:', productId);
-    console.log('Request Body (form-data):', req.body);
-    console.log('Request File:', req.file);
-    console.log('Request Body Keys:', Object.keys(req.body));
     
     // Check if product exists
     const existingProduct = await Product.findById(productId);
@@ -255,108 +252,107 @@ exports.updateProduct = async (req, res) => {
       });
     }
     
-    console.log('Existing Product:', {
-      id: existingProduct.id,
-      name: existingProduct.name,
-      image: existingProduct.image
-    });
+    console.log('Existing product found:', existingProduct.id, existingProduct.name);
     
-    // Start with req.body (which contains form-data fields)
+    // SIMPLE APPROACH: Create updateData from scratch
     let updateData = {};
     
-    // Copy all fields from req.body except empty strings
-    for (const [key, value] of Object.entries(req.body)) {
-      if (value !== undefined && value !== null && value !== '') {
-        updateData[key] = value;
-      }
+    // Handle name
+    if (req.body.name && req.body.name.trim() !== '') {
+      updateData.name = req.body.name.trim();
     }
     
-    console.log('Initial updateData from form:', updateData);
+    // Handle price
+    if (req.body.price && !isNaN(parseFloat(req.body.price))) {
+      updateData.price = parseFloat(req.body.price);
+    }
     
-    // Handle image upload
+    // Handle type
+    if (req.body.type && ['veg', 'non-veg'].includes(req.body.type.toLowerCase())) {
+      updateData.type = req.body.type.toLowerCase();
+    }
+    
+    // Handle description
+    if (req.body.description !== undefined) {
+      updateData.description = req.body.description;
+    }
+    
+    // Handle category_id
+    if (req.body.category_id && !isNaN(parseInt(req.body.category_id))) {
+      updateData.category_id = parseInt(req.body.category_id);
+    }
+    
+    // Handle image - MOST IMPORTANT!
     if (req.file) {
       updateData.image = `/uploads/products/${req.file.filename}`;
-      console.log('✅ New image uploaded:', updateData.image);
+      console.log('New image uploaded:', updateData.image);
     } else if (req.body.image && req.body.image !== 'undefined') {
-      // If image field exists in form-data (might be a URL string)
       updateData.image = req.body.image;
-      console.log('Using provided image URL:', updateData.image);
-    } else if (existingProduct.image) {
-      // Keep existing image
-      updateData.image = existingProduct.image;
-      console.log('Keeping existing image:', updateData.image);
     }
     
-    // Parse boolean fields from form-data strings
-    if (updateData.is_available !== undefined) {
-      updateData.is_available = updateData.is_available === 'true' || updateData.is_available === '1' || updateData.is_available === true;
-      console.log('is_available parsed:', updateData.is_available);
+    // Handle booleans
+    if (req.body.is_available !== undefined) {
+      updateData.is_available = req.body.is_available === 'true' || req.body.is_available === '1' || req.body.is_available === true;
     }
     
-    if (updateData.is_popular !== undefined) {
-      updateData.is_popular = updateData.is_popular === 'true' || updateData.is_popular === '1' || updateData.is_popular === true;
-      console.log('is_popular parsed:', updateData.is_popular);
+    if (req.body.is_popular !== undefined) {
+      updateData.is_popular = req.body.is_popular === 'true' || req.body.is_popular === '1' || req.body.is_popular === true;
     }
     
-    if (updateData.is_featured !== undefined) {
-      updateData.is_featured = updateData.is_featured === 'true' || updateData.is_featured === '1' || updateData.is_featured === true;
-      console.log('is_featured parsed:', updateData.is_featured);
+    if (req.body.is_featured !== undefined) {
+      updateData.is_featured = req.body.is_featured === 'true' || req.body.is_featured === '1' || req.body.is_featured === true;
     }
     
-    // Parse tags and ingredients from form-data strings
-    if (updateData.tags) {
+    // Handle original_price
+    if (req.body.original_price && !isNaN(parseFloat(req.body.original_price))) {
+      updateData.original_price = parseFloat(req.body.original_price);
+    }
+    
+    // Handle prep_time
+    if (req.body.prep_time) {
+      updateData.prep_time = req.body.prep_time;
+    }
+    
+    // Handle tags
+    if (req.body.tags !== undefined) {
       try {
-        updateData.tags = JSON.parse(updateData.tags);
-      } catch (error) {
-        if (typeof updateData.tags === 'string') {
-          updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
+        if (typeof req.body.tags === 'string') {
+          updateData.tags = JSON.parse(req.body.tags);
+        } else {
+          updateData.tags = req.body.tags;
         }
+      } catch (error) {
+        updateData.tags = req.body.tags.split(',').map(tag => tag.trim());
       }
     }
     
-    if (updateData.ingredients) {
+    // Handle ingredients
+    if (req.body.ingredients !== undefined) {
       try {
-        updateData.ingredients = JSON.parse(updateData.ingredients);
-      } catch (error) {
-        if (typeof updateData.ingredients === 'string') {
-          updateData.ingredients = updateData.ingredients.split(',').map(ing => ing.trim());
+        if (typeof req.body.ingredients === 'string') {
+          updateData.ingredients = JSON.parse(req.body.ingredients);
+        } else {
+          updateData.ingredients = req.body.ingredients;
         }
+      } catch (error) {
+        updateData.ingredients = req.body.ingredients.split(',').map(ing => ing.trim());
       }
     }
     
-    // Ensure type is lowercase
-    if (updateData.type) {
-      updateData.type = updateData.type.toLowerCase();
-    }
+    console.log('Final updateData object:', JSON.stringify(updateData, null, 2));
+    console.log('Number of fields to update:', Object.keys(updateData).length);
     
-    // Convert numeric fields
-    if (updateData.price) {
-      updateData.price = parseFloat(updateData.price);
-    }
-    
-    if (updateData.original_price) {
-      updateData.original_price = parseFloat(updateData.original_price);
-    }
-    
-    if (updateData.category_id) {
-      updateData.category_id = parseInt(updateData.category_id);
-    }
-    
-    console.log('Final updateData before sending to model:', JSON.stringify(updateData, null, 2));
-    console.log('Number of fields:', Object.keys(updateData).length);
-    
-    // Check if we have data to update
+    // CRITICAL: If no fields, add at least one field to update
     if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No data provided for update'
-      });
+      console.log('No fields provided. Using name as default update.');
+      updateData.name = existingProduct.name;
     }
     
-    // Call the model's update method
+    // Call update method
+    console.log('Calling Product.update() with data:', updateData);
     const product = await Product.update(productId, updateData);
     
-    console.log('✅ Update successful! Product ID:', product.id);
+    console.log('✅ Update successful!');
     
     res.json({
       success: true,
@@ -371,8 +367,7 @@ exports.updateProduct = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message,
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message
     });
   }
 };

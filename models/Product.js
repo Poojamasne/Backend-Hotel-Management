@@ -194,123 +194,97 @@ class Product {
         return rows[0];
     }
  
-// Update product - FIXED VERSION
+// Update product - SIMPLE FIXED VERSION
 static async update(id, updateData) {
-  const fields = [];
-  const values = [];
+  console.log('=== PRODUCT.update() CALLED ===');
+  console.log('Product ID to update:', id);
+  console.log('Update data received:', updateData);
   
-  console.log('=== PRODUCT MODEL UPDATE DEBUG ===');
-  console.log('Product ID:', id);
-  console.log('Update Data Received:', JSON.stringify(updateData, null, 2));
-  
-  // Process each field
-  for (const [key, value] of Object.entries(updateData)) {
-    console.log(`Processing field: ${key} = ${value} (type: ${typeof value})`);
-    
-    // Skip null/undefined/empty strings (but allow false/0)
-    if (value === null || value === undefined || value === '') {
-      console.log(`Skipping field: ${key}`);
-      continue;
-    }
-    
-    if (key === 'tags' || key === 'ingredients') {
-      fields.push(`${key} = ?`);
-      if (Array.isArray(value) && value.length > 0) {
-        values.push(JSON.stringify(value));
-      } else if (value) {
-        // If it's already a stringified JSON
-        if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
-          try {
-            JSON.parse(value);
-            values.push(value);
-          } catch {
-            values.push(JSON.stringify([value]));
-          }
-        } else {
-          values.push(JSON.stringify([value]));
-        }
-      } else {
-        values.push(null);
-      }
-    } else if (key === 'price' || key === 'original_price') {
-      fields.push(`${key} = ?`);
-      values.push(parseFloat(value) || 0);
-    } else if (key === 'category_id') {
-      fields.push(`${key} = ?`);
-      const categoryId = parseInt(value);
-      values.push(categoryId || null);
-      
-      // Update category_slug if category_id changed
-      if (categoryId) {
-        try {
-          const [categoryRows] = await db.execute(
-            'SELECT slug FROM categories WHERE id = ?',
-            [categoryId]
-          );
-          if (categoryRows.length > 0) {
-            fields.push('category_slug = ?');
-            values.push(categoryRows[0].slug);
-          }
-        } catch (error) {
-          console.error('Failed to get category slug:', error);
-        }
-      }
-    } else if (key === 'is_available' || key === 'is_popular' || key === 'is_featured') {
-      fields.push(`${key} = ?`);
-      // Convert boolean to MySQL tinyint (1 or 0)
-      const boolValue = value === true || value === 'true' || value === '1' || value === 1;
-      values.push(boolValue ? 1 : 0);
-      console.log(`Boolean ${key} converted to:`, boolValue ? 1 : 0);
-    } else if (key === 'type' && value) {
-      fields.push(`${key} = ?`);
-      values.push(value.toString().toLowerCase());
-    } else if (key === 'image') {
-      // Handle image path - ensure it's stored correctly
-      fields.push(`${key} = ?`);
-      
-      // Normalize image path
-      let imagePath = value;
-      if (imagePath && !imagePath.startsWith('/uploads/') && !imagePath.startsWith('http')) {
-        if (imagePath.startsWith('products/')) {
-          imagePath = `/uploads/${imagePath}`;
-        } else if (!imagePath.startsWith('/')) {
-          imagePath = `/uploads/products/${imagePath}`;
-        }
-      }
-      values.push(imagePath);
-      console.log(`Image path stored: ${imagePath}`);
-    } else {
-      // Handle all other fields (name, description, etc.)
-      fields.push(`${key} = ?`);
-      values.push(value);
-    }
+  if (!updateData || Object.keys(updateData).length === 0) {
+    throw new Error('No data provided for update');
   }
-  
-  // Always update updated_at
-  fields.push('updated_at = NOW()');
-  
-  // Add ID at the end for WHERE clause
-  values.push(id);
-  
-  console.log('Fields to update:', fields);
-  console.log('Values:', values);
-  
-  if (fields.length === 0) {
-    throw new Error('No valid fields to update');
-  }
-  
-  const sql = `UPDATE products SET ${fields.join(', ')} WHERE id = ?`;
-  console.log('Executing SQL:', sql);
   
   try {
-    const [result] = await db.execute(sql, values);
-    console.log('Update successful. Rows affected:', result.affectedRows);
+    // Build UPDATE query
+    const fields = [];
+    const values = [];
     
-    // Return the updated product
+    // Always update updated_at
+    fields.push('updated_at = NOW()');
+    
+    // Process each field
+    for (const [key, value] of Object.entries(updateData)) {
+      console.log(`Processing field: ${key} = ${value} (type: ${typeof value})`);
+      
+      // Skip if value is undefined or null
+      if (value === undefined || value === null) {
+        console.log(`Skipping ${key} because it's undefined/null`);
+        continue;
+      }
+      
+      // Skip empty strings for some fields (but allow for description)
+      if (value === '' && key !== 'description' && key !== 'prep_time') {
+        console.log(`Skipping ${key} because it's empty string`);
+        continue;
+      }
+      
+      // Handle different field types
+      if (key === 'tags' || key === 'ingredients') {
+        fields.push(`${key} = ?`);
+        if (Array.isArray(value)) {
+          values.push(JSON.stringify(value));
+        } else if (typeof value === 'string' && value.startsWith('[')) {
+          // Already JSON string
+          values.push(value);
+        } else {
+          // Convert to array and stringify
+          const arr = typeof value === 'string' ? value.split(',').map(item => item.trim()) : [value];
+          values.push(JSON.stringify(arr));
+        }
+      } else if (key === 'price' || key === 'original_price') {
+        fields.push(`${key} = ?`);
+        values.push(parseFloat(value));
+      } else if (key === 'category_id') {
+        fields.push(`${key} = ?`);
+        values.push(parseInt(value));
+      } else if (key === 'is_available' || key === 'is_popular' || key === 'is_featured') {
+        fields.push(`${key} = ?`);
+        const boolValue = value === true || value === 'true' || value === '1' || value === 1;
+        values.push(boolValue ? 1 : 0);
+      } else if (key === 'type') {
+        fields.push(`${key} = ?`);
+        values.push(value.toString().toLowerCase());
+      } else if (key === 'image') {
+        fields.push(`${key} = ?`);
+        // Store image path as-is
+        values.push(value);
+      } else {
+        // All other fields (name, description, prep_time, etc.)
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    }
+    
+    // Add ID for WHERE clause
+    values.push(id);
+    
+    console.log('SQL fields:', fields);
+    console.log('SQL values:', values);
+    
+    // Build and execute SQL
+    const sql = `UPDATE products SET ${fields.join(', ')} WHERE id = ?`;
+    console.log('Executing SQL:', sql);
+    
+    const [result] = await db.execute(sql, values);
+    console.log('Update result - Rows affected:', result.affectedRows);
+    
+    // Return updated product
     return await this.findById(id);
+    
   } catch (error) {
     console.error('Database update error:', error);
-    console.error('SQL error:', error.sqlMessage);
+    console.error('SQL Error:', error.sqlMessage);
+    console.error('SQL:', error.sql);
     throw error;
   }
 }
