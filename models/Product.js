@@ -5,12 +5,12 @@ class Product {
     static async create(productData) {
         const { 
             name, description, price, original_price, category_id, 
-            category_slug, image, type, tags, prep_time, 
+            image, type, tags, prep_time, 
             ingredients, is_available, is_popular, is_featured 
         } = productData;
         
         console.log('Creating product with data:', {
-            name, description, price, category_id, category_slug, type,
+            name, description, price, category_id, type,
             is_available, is_popular, is_featured
         });
         
@@ -24,28 +24,51 @@ class Product {
         });
         
         try {
+            // Generate category slug from name (truncate to 100 chars for database)
+            let categorySlug = this.generateSlug(name);
+            if (categorySlug.length > 100) {
+                categorySlug = categorySlug.substring(0, 100);
+            }
+            
+            // Handle tags and ingredients - ensure they're arrays
+            const tagsArray = Array.isArray(tags) ? tags : [];
+            const ingredientsArray = Array.isArray(ingredients) ? ingredients : [];
+            
+            console.log('Final data for insertion:', {
+                name,
+                category_id: parseInt(category_id),
+                category_slug: categorySlug,
+                type: type.toLowerCase(),
+                tags: tagsArray.length > 0 ? JSON.stringify(tagsArray) : null,
+                ingredients: ingredientsArray.length > 0 ? JSON.stringify(ingredientsArray) : null,
+                isAvailable, isPopular, isFeatured
+            });
+            
             const [result] = await db.execute(
                 `INSERT INTO products 
                 (name, description, price, original_price, category_id, 
                  category_slug, image, type, tags, prep_time, 
                  ingredients, is_available, is_popular, is_featured,
-                 created_at, updated_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                 rating, rating_count, total_orders, created_at, updated_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
                 [
                     name, 
                     description || '', 
                     parseFloat(price), 
                     original_price ? parseFloat(original_price) : null, 
                     parseInt(category_id),
-                    category_slug || this.generateSlug(name), 
-                    image || null, // Don't use default image
-                    type, 
-                    tags ? JSON.stringify(tags) : null, 
+                    categorySlug, // Use generated slug
+                    image || null,
+                    type.toLowerCase(), // Ensure lowercase for ENUM
+                    tagsArray.length > 0 ? JSON.stringify(tagsArray) : null, 
                     prep_time || '15-20 min',
-                    ingredients ? JSON.stringify(ingredients) : null, 
-                    isAvailable ? 1 : 0, // Convert boolean to MySQL tinyint (1 or 0)
-                    isPopular ? 1 : 0, // Convert boolean to MySQL tinyint (1 or 0)
-                    isFeatured ? 1 : 0  // Convert boolean to MySQL tinyint (1 or 0)
+                    ingredientsArray.length > 0 ? JSON.stringify(ingredientsArray) : null, 
+                    isAvailable ? 1 : 0,
+                    isPopular ? 1 : 0,
+                    isFeatured ? 1 : 0,
+                    0.0,  // Default rating (0.0)
+                    0,    // Default rating_count (0)
+                    0     // Default total_orders (0)
                 ]
             );
             
@@ -53,6 +76,13 @@ class Product {
             return this.findById(result.insertId);
         } catch (error) {
             console.error('Database error in Product.create:', error);
+            if (error.sqlMessage) {
+                console.error('SQL Error Message:', error.sqlMessage);
+                console.error('SQL Error Code:', error.code);
+                console.error('SQL Error Number:', error.errno);
+                console.error('SQL State:', error.sqlState);
+                console.error('SQL Query that failed:', error.sql);
+            }
             throw error;
         }
     }
@@ -148,7 +178,7 @@ class Product {
             if (key === 'tags' || key === 'ingredients') {
                 // Convert arrays to JSON strings
                 fields.push(`${key} = ?`);
-                values.push(JSON.stringify(value));
+                values.push(value && Array.isArray(value) && value.length > 0 ? JSON.stringify(value) : null);
             } else if (key === 'price' || key === 'original_price') {
                 // Convert to float
                 fields.push(`${key} = ?`);
@@ -161,6 +191,10 @@ class Product {
                 // Convert boolean to MySQL tinyint
                 fields.push(`${key} = ?`);
                 values.push(value ? 1 : 0);
+            } else if (key === 'type' && value) {
+                // Ensure type is lowercase for ENUM
+                fields.push(`${key} = ?`);
+                values.push(value.toLowerCase());
             } else {
                 fields.push(`${key} = ?`);
                 values.push(value);
@@ -171,8 +205,6 @@ class Product {
         fields.push('updated_at = NOW()');
         
         values.push(id);
-        
-        console.log('Update query:', `UPDATE products SET ${fields.join(', ')} WHERE id = ?`, values);
         
         await db.execute(
             `UPDATE products SET ${fields.join(', ')} WHERE id = ?`,

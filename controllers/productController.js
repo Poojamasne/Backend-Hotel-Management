@@ -95,16 +95,16 @@ exports.searchProducts = async (req, res) => {
     }
 };
 
-
 // @desc    Create product (Admin only)
 // @route   POST /api/admin/products
 exports.createProduct = async (req, res) => {
     try {
-        console.log('Create product request body:', JSON.stringify(req.body, null, 2));
+        console.log('Create product request received');
+        console.log('Request body:', req.body);
         
         const {
             name, description, price, original_price, category_id,
-            category_slug, image, type, tags, prep_time,
+            image, type, tags, prep_time,
             ingredients, is_available, is_popular, is_featured
         } = req.body;
         
@@ -117,39 +117,35 @@ exports.createProduct = async (req, res) => {
             });
         }
         
-        console.log('Creating product with data:', {
-            name,
-            description: description || '',
-            price: parseFloat(price),
-            original_price: original_price ? parseFloat(original_price) : null,
-            category_id: parseInt(category_id),
-            category_slug: category_slug || null,
-            image: image || null,
-            type,
-            tags: tags || [],
-            prep_time: prep_time || '15-20 min',
-            ingredients: ingredients || [],
-            is_available: is_available !== undefined ? Boolean(is_available) : true,
-            is_popular: is_popular !== undefined ? Boolean(is_popular) : false,
-            is_featured: is_featured !== undefined ? Boolean(is_featured) : false
-        });
+        // Validate type field
+        const productType = type.toLowerCase();
+        if (productType !== 'veg' && productType !== 'non-veg') {
+            return res.status(400).json({
+                success: false,
+                message: 'Type must be either "veg" or "non-veg"'
+            });
+        }
         
-        const product = await Product.create({
-            name,
-            description: description || '',
+        // Prepare data for creation
+        const productData = {
+            name: name.trim(),
+            description: description ? description.trim() : '',
             price: parseFloat(price),
             original_price: original_price ? parseFloat(original_price) : null,
             category_id: parseInt(category_id),
-            category_slug: category_slug || null,
             image: image || null,
-            type,
+            type: productType,
             tags: tags || [],
             prep_time: prep_time || '15-20 min',
             ingredients: ingredients || [],
             is_available: is_available !== undefined ? Boolean(is_available) : true,
             is_popular: is_popular !== undefined ? Boolean(is_popular) : false,
             is_featured: is_featured !== undefined ? Boolean(is_featured) : false
-        });
+        };
+        
+        console.log('Creating product with processed data:', productData);
+        
+        const product = await Product.create(productData);
         
         console.log('Product created successfully:', product.id);
         
@@ -160,10 +156,6 @@ exports.createProduct = async (req, res) => {
         });
     } catch (error) {
         console.error('Create product error:', error);
-        console.error('Error stack:', error.stack);
-        console.error('Error code:', error.code);
-        console.error('Error sqlMessage:', error.sqlMessage);
-        console.error('Error sql:', error.sql);
         
         // Handle specific MySQL errors
         if (error.code === 'ER_NO_REFERENCED_ROW_2') {
@@ -189,15 +181,24 @@ exports.createProduct = async (req, res) => {
             });
         }
         
+        if (error.code === 'ER_TRUNCATED_WRONG_VALUE_FOR_FIELD') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid value for field. Please check your data types.',
+                field: error.sqlMessage
+            });
+        }
+        
         res.status(500).json({
             success: false,
             message: 'Server error',
             error: error.message,
-            sqlError: process.env.NODE_ENV === 'development' ? error.sqlMessage : undefined,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            sqlError: process.env.NODE_ENV === 'development' ? error.sqlMessage : undefined
         });
     }
 };
+
+// ... keep other functions as they are
 
 // @desc    Update product (Admin only)
 // @route   PUT /api/admin/products/:id
