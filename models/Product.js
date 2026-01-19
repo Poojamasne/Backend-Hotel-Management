@@ -134,9 +134,10 @@ class Product {
         }
         
         if (filters.category_slug) {
-            query += ' AND p.category_slug = ?';
-            values.push(filters.category_slug);
-        }
+    query += ' AND (c.slug = ? OR p.category_slug = ?)';
+    values.push(filters.category_slug);
+    values.push(filters.category_slug);
+  }
         
         if (filters.type) {
             query += ' AND p.type = ?';
